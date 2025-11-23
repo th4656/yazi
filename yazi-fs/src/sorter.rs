@@ -43,6 +43,10 @@ impl FilesSorter {
 				promote!(a, b);
 				self.fallback(a, b, self.cmp(a.btime, b.btime))
 			}),
+			SortBy::Ctime => items.sort_unstable_by(|a, b| {
+				promote!(a, b);
+				self.fallback(a, b, self.cmp(a.ctime, b.ctime))
+			}),
 			SortBy::Extension => items.sort_unstable_by(|a, b| {
 				promote!(a, b);
 				let aa = a.url.ext().filter(|_| a.is_file());

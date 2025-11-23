@@ -43,6 +43,17 @@ function Linemode:btime()
 	end
 end
 
+function Linemode:ctime()
+	local time = math.floor(self._file.cha.ctime or 0)
+	if time == 0 then
+		return ""
+	elseif os.date("%Y", time) == os.date("%Y") then
+		return os.date("%m/%d %H:%M", time)
+	else
+		return os.date("%m/%d  %Y", time)
+	end
+end
+
 function Linemode:mtime()
 	local time = math.floor(self._file.cha.mtime or 0)
 	if time == 0 then

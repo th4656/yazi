@@ -38,6 +38,10 @@ impl FilesSorter {
 				let ord = self.cmp(a.btime, b.btime, self.promote(a, b));
 				if ord == Ordering::Equal { by_alphabetical(a, b) } else { ord }
 			}),
+			SortBy::Ctime => items.sort_unstable_by(|a, b| {
+				let ord = self.cmp(a.ctime, b.ctime, self.promote(a, b));
+				if ord == Ordering::Equal { by_alphabetical(a, b) } else { ord }
+			}),
 			SortBy::Extension => items.sort_unstable_by(|a, b| {
 				let ord = if self.sensitive {
 					self.cmp(a.url.ext(), b.url.ext(), self.promote(a, b))

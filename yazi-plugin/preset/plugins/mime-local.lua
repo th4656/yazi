@@ -4,54 +4,59 @@ local TYPE_PATS = { "text", "image", "video", "application", "audio", "font", "i
 local M = {}
 
 function M:fetch(job)
-	local urls, paths = {}, {}
-	for i, file in ipairs(job.files) do
-		if file.cache then
-			urls[i], paths[i] = tostring(file.url), tostring(file.cache)
-		else
+	return ya.co(function()
+		local paths, updates = {}, {}
+		for i, file in ipairs(job.files) do
 			paths[i] = tostring(file.path)
 		end
-	end
 
-	local child, err = M.spawn_file1(paths)
-	if not child then
-		M.placeholder(err, urls, paths)
-		return true, err
-	end
+		local flush = ya.throttle(0.3, function()
+			if next(updates) then
+				ya.emit("update_mimes", { updates = updates })
+				updates = {}
+			end
+		end)
 
-	local updates, last = {}, ya.time()
-	local flush = function(force)
-		if not force and ya.time() - last < 0.3 then
-			return
-		end
-		if next(updates) then
-			ya.emit("update_mimes", { updates = updates })
-			updates, last = {}, ya.time()
-		end
-	end
-
-	local i, state, match, ignore = 1, {}, nil, nil
-	repeat
-		local line, event = child:read_line_with { timeout = 300 }
-		if event == 3 then
-			flush(true)
-			goto continue
-		elseif event ~= 0 then
-			break
+		local child, err = M.spawn_file1(paths)
+		if not child then
+			return M.placeholder(err, job.files)
 		end
 
-		match, ignore = M.match_mimetype(line)
-		if match then
-			updates[urls[i] or paths[i]], state[i], i = match, true, i + 1
-			flush(false)
-		elseif not ignore then
-			state[i], i = false, i + 1
-		end
-		::continue::
-	until i > #paths
+		local i, f, match, ignore = 1, nil, nil, nil
+		repeat
+			local line, event = child:read_line_with { timeout = 300 }
+			if event == 3 then
+				flush(true)
+				goto continue
+			elseif event ~= 0 then
+				break
+			end
 
-	flush(true)
-	return state
+			f, match, ignore = job.files[i], M.match_mimetype(line)
+			if match then
+				if coroutine.yield(f, { match }) and not f.cha.is_dummy then
+					updates[f.url] = match
+					flush()
+				end
+				i = i + 1
+			elseif not ignore then
+				coroutine.yield(f, {
+					error = Err("Failed to determine MIME type for `%s`", f.url),
+					retry = true,
+				})
+				i = i + 1
+			end
+			::continue::
+		until i > #paths
+
+		for j = i, #paths do
+			coroutine.yield(job.files[j], {
+				error = Err("Failed to read `file` output"),
+				retry = true,
+			})
+		end
+		flush(true)
+	end)
 end
 
 function M.match_mimetype(line)
@@ -96,17 +101,16 @@ function M.spawn_file1(paths)
 	return child
 end
 
-function M.placeholder(err, urls, paths)
-	if err.kind ~= "NotFound" then
-		return
+function M.placeholder(err, files)
+	local mime, updates = "null/file1-not-found", {}
+	for _, file in ipairs(files) do
+		if err.kind ~= "NotFound" then
+			coroutine.yield(file, { error = Error(err), retry = true })
+		elseif coroutine.yield(file, { mime }) and not file.cha.is_dummy then
+			updates[file.url] = mime
+		end
 	end
-
-	local updates = {}
-	for i = 1, #paths do
-		updates[urls[i] or paths[i]] = "null/file1-not-found"
-	end
-
-	ya.emit("update_mimes", { updates = updates })
+	return require("mime.dir").commit(updates)
 end
 
 return M

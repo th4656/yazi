@@ -16,11 +16,11 @@ macro_rules! runtime_mut {
 
 #[macro_export]
 macro_rules! runtime_scope {
-	($lua:ident, $id:expr, $block:expr) => {{
+	($lua:ident, $name:expr, $block:expr) => {{
 		let mut f = || {
-			let blocking = $crate::runtime_mut!($lua)?.critical_push($id, true);
+			$crate::runtime_mut!($lua)?.enter_inherited($name, true);
 			let result = (|| $block)();
-			$crate::runtime_mut!($lua)?.critical_pop(blocking)?;
+			$crate::runtime_mut!($lua)?.leave()?;
 			result
 		};
 		f()
@@ -32,12 +32,13 @@ macro_rules! deprecate {
 	($lua:ident, $tt:tt) => {{
 		static WARNED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 		if !WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
-			let id = match $crate::runtime!($lua)?.current()? {
+			let source = match $crate::runtime!($lua)?.name()? {
 				"init" => "`init.lua` config file",
+				"root" => "custom UI plugin",
 				s => &format!("`{s}.yazi` plugin"),
 			};
 			yazi_macro::emit!(Call(
-				yazi_macro::relay!(app:deprecate).with("content", format!($tt, id))
+				yazi_macro::relay!(app:deprecate).with("content", format!($tt, source))
 			));
 		}
 	}};
@@ -209,20 +210,18 @@ macro_rules! impl_file_fields {
 
 		$fields.add_cached_field("cha", |_, me| Ok(me.cha));
 		$fields.add_cached_field("url", |_, me| Ok(me.url_owned()));
-		$fields.add_cached_field("link_to", |_, me| Ok(me.link_to.clone()));
+		$fields.add_cached_field("link_to", |_, me| Ok(me.extra.link_to().cloned()));
 
 		$fields.add_cached_field("name", |lua, me| {
 			me.name().map(|s| lua.create_string(s.encoded_bytes())).transpose()
 		});
 		$fields.add_cached_field("path", |_, me| {
-			use yazi_fs::FsUrl;
-			use yazi_shared::{path::PathBufDyn, url::AsUrl};
-			Ok(PathBufDyn::from(me.url.as_url().unified_path()))
+			use yazi_shared::path::PathBufDyn;
+			Ok(PathBufDyn::from(me.content_path()))
 		});
 		$fields.add_cached_field("cache", |_, me| {
-			use yazi_fs::FsUrl;
 			use yazi_shared::path::PathBufDyn;
-			Ok(me.url.cache().map(PathBufDyn::from))
+			Ok(me.cache().map(PathBufDyn::from))
 		});
 	};
 }
@@ -231,8 +230,8 @@ macro_rules! impl_file_fields {
 macro_rules! impl_file_methods {
 	($methods:ident) => {
 		$methods.add_method("hash", |_, me, ()| {
-			use yazi_fs::FsHash64;
-			Ok(me.hash_u64())
+			use yazi_fs::{FsHash64, file::FileSig};
+			Ok(FileSig(me).hash_u64())
 		});
 	};
 }

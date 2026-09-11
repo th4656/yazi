@@ -12,8 +12,8 @@ function M:entry()
 	ya.emit("escape", { visual = true })
 
 	local cwd, selected = state()
-	if cwd.spec.is_virtual then
-		return ya.notify { title = "Fzf", content = "Not supported under virtual filesystems", timeout = 5, level = "warn" }
+	if not cwd.spec.is_regular then
+		return ya.notify { title = "Fzf", content = "Only supported for regular paths", timeout = 5, level = "warn" }
 	end
 
 	local permit = ui.hide()
@@ -77,7 +77,7 @@ function M.split_urls(cwd, output)
 	local t = {}
 	for line in output:gmatch("[^\r\n]+") do
 		local u = Url(line)
-		t[#t + 1] = u.is_absolute and u or cwd:join(u)
+		t[#t + 1] = u.is_absolute and u or cwd:resolve(u)
 	end
 	return t
 end

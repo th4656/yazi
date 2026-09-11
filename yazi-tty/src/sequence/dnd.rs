@@ -1,9 +1,8 @@
 use std::{fmt::{self, Display}, str};
 
-use base64::Engine;
-use yazi_shim::BASE64_SANE;
+use base64::{Engine, engine::general_purpose::STANDARD_NO_PAD_INDIFFERENT};
 
-use super::traits::Mimelist;
+use super::traits::{ListMimes, Mimelist};
 
 /// Enable drag support: `OSC 72 ; t=o:x=1 ; machine id ST`
 pub struct EnableDrag<'a>(pub &'a str);
@@ -19,7 +18,7 @@ pub struct EnableDrop<M>(pub M);
 
 impl<M: Mimelist> Display for EnableDrop<M> {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		write!(f, "\x1b]72;t=a;{}\x1b\\", ListDndMimes(self.0.clone()))
+		write!(f, "\x1b]72;t=a;{}\x1b\\", ListMimes(self.0.clone()))
 	}
 }
 
@@ -47,9 +46,9 @@ pub enum AgreeDrag<M> {
 impl<M: Mimelist> Display for AgreeDrag<M> {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match self {
-			Self::Copy(mimes) => write!(f, "\x1b]72;t=o:o=1;{}\x1b\\", ListDndMimes(mimes.clone())),
-			Self::Move(mimes) => write!(f, "\x1b]72;t=o:o=2;{}\x1b\\", ListDndMimes(mimes.clone())),
-			Self::Either(mimes) => write!(f, "\x1b]72;t=o:o=3;{}\x1b\\", ListDndMimes(mimes.clone())),
+			Self::Copy(mimes) => write!(f, "\x1b]72;t=o:o=1;{}\x1b\\", ListMimes(mimes.clone())),
+			Self::Move(mimes) => write!(f, "\x1b]72;t=o:o=2;{}\x1b\\", ListMimes(mimes.clone())),
+			Self::Either(mimes) => write!(f, "\x1b]72;t=o:o=3;{}\x1b\\", ListMimes(mimes.clone())),
 		}
 	}
 }
@@ -65,8 +64,8 @@ impl<M: Mimelist> Display for AgreeDrop<M> {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match self {
 			Self::Reject => write!(f, "\x1b]72;t=m:o=0\x1b\\"),
-			Self::Copy(mimes) => write!(f, "\x1b]72;t=m:o=1;{}\x1b\\", ListDndMimes(mimes.clone())),
-			Self::Move(mimes) => write!(f, "\x1b]72;t=m:o=2;{}\x1b\\", ListDndMimes(mimes.clone())),
+			Self::Copy(mimes) => write!(f, "\x1b]72;t=m:o=1;{}\x1b\\", ListMimes(mimes.clone())),
+			Self::Move(mimes) => write!(f, "\x1b]72;t=m:o=2;{}\x1b\\", ListMimes(mimes.clone())),
 		}
 	}
 }
@@ -79,7 +78,7 @@ impl Display for StartDrag {
 }
 
 /// Start requesting dropped data: `OSC 72 ; t=r:x=idx ST`
-pub struct StartDrop(pub u8);
+pub struct StartDrop(pub(crate) u8);
 
 impl Display for StartDrop {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -88,11 +87,11 @@ impl Display for StartDrop {
 }
 
 /// Present drag data: `OSC 72 ; t=p:x=idx ; base64 encoded data ST`
-pub struct PresentDrag<'a>(pub u8, pub &'a [u8]);
+pub struct PresentDrag<'a>(pub(crate) u8, pub(crate) &'a [u8]);
 
 impl Display for PresentDrag<'_> {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		let b64 = BASE64_SANE.encode(self.1).into_bytes();
+		let b64 = STANDARD_NO_PAD_INDIFFERENT.encode(self.1).into_bytes();
 		let chunks = b64.len().div_ceil(4096);
 
 		for (i, chunk) in b64.chunks(4096).enumerate() {
@@ -111,16 +110,16 @@ impl Display for PresentDrag<'_> {
 /// Present drag icon data:
 /// `OSC 72 ; t=p:x=-1:y=fmt:X=width:Y=height:o=opacity ; base64 payload ST`
 pub struct PresentDragIcon<'a> {
-	pub format:  u8,
-	pub opacity: u16,
-	pub width:   u32,
-	pub height:  u32,
-	pub data:    &'a [u8],
+	pub(crate) format:  u8,
+	pub(crate) opacity: u16,
+	pub(crate) width:   u32,
+	pub(crate) height:  u32,
+	pub(crate) data:    &'a [u8],
 }
 
 impl Display for PresentDragIcon<'_> {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		let b64 = BASE64_SANE.encode(self.data).into_bytes();
+		let b64 = STANDARD_NO_PAD_INDIFFERENT.encode(self.data).into_bytes();
 		let chunks = b64.len().div_ceil(4096);
 
 		for (i, chunk) in b64.chunks(4096).enumerate() {
@@ -154,20 +153,5 @@ pub enum FinishDrop {
 impl Display for FinishDrop {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		write!(f, "\x1b]72;t=r:o={}\x1b\\", *self as u8)
-	}
-}
-
-/// Write MIME types separated by spaces.
-struct ListDndMimes<M>(pub M);
-
-impl<M: Mimelist> Display for ListDndMimes<M> {
-	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		for (i, m) in self.0.clone().into_iter().enumerate() {
-			if i != 0 {
-				write!(f, " ")?;
-			}
-			write!(f, "{m}")?;
-		}
-		Ok(())
 	}
 }

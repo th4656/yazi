@@ -1,13 +1,13 @@
-use std::{env, ops::Deref, path::PathBuf, sync::Arc};
+use std::{env, ops::Deref, path::PathBuf};
 
 use serde::{Deserialize, Deserializer, Serialize, de};
 use yazi_fs::path::sanitize_path;
-use yazi_shared::auth::Auth;
+use yazi_shared::auth::{Auth, AuthArc};
 
-#[derive(Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct ServiceSftp {
-	#[serde(skip, default)]
-	pub auth:           Arc<Auth>,
+	#[serde(skip)]
+	pub auth:           AuthArc,
 	pub host:           String,
 	pub user:           String,
 	pub port:           u16,

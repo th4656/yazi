@@ -7,6 +7,7 @@ pub fn slim_lua(lua: &Lua) -> mlua::Result<()> {
 	globals.raw_set("ui", crate::ui::compose())?;
 	globals.raw_set("ya", crate::utils::compose(true))?;
 	globals.raw_set("fs", crate::fs::compose())?;
+	globals.raw_set("vf", &*yazi_config::VFS)?;
 	globals.raw_set("rt", crate::runtime::compose())?;
 	globals.raw_set("km", crate::keymap::compose())?;
 	globals.raw_set("th", crate::theme::compose().into_lua(lua)?)?;
@@ -16,7 +17,7 @@ pub fn slim_lua(lua: &Lua) -> mlua::Result<()> {
 	yazi_shared::url::UrlBuf::install(lua)?;
 	yazi_shared::path::PathBufDyn::install(lua)?;
 
-	yazi_binding::Error::install(lua)?;
+	yazi_shim::fs::Error::install(lua)?;
 	yazi_binding::process::install(lua)?;
 	yazi_runner::loader::install(lua)?;
 

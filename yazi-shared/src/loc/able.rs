@@ -44,7 +44,7 @@ impl LocBufAble for typed_path::UnixPathBuf {
 }
 
 // --- StrandAble
-pub trait StrandAble<'a>: Copy {}
+pub(crate) trait StrandAble<'a>: Copy {}
 
 impl<'a> StrandAble<'a> for &'a OsStr {}
 
@@ -61,6 +61,8 @@ pub(super) trait LocAbleImpl<'p>: LocAble<'p> {
 	fn file_name(self) -> Option<Self::Strand<'p>>;
 
 	unsafe fn from_encoded_bytes_unchecked(bytes: &'p [u8]) -> Self;
+
+	fn has_root(self) -> bool;
 
 	fn join<'a, T>(self, path: T) -> Self::Owned
 	where
@@ -89,6 +91,8 @@ impl<'p> LocAbleImpl<'p> for &'p std::path::Path {
 	unsafe fn from_encoded_bytes_unchecked(bytes: &'p [u8]) -> Self {
 		std::path::Path::new(unsafe { OsStr::from_encoded_bytes_unchecked(bytes) })
 	}
+
+	fn has_root(self) -> bool { self.has_root() }
 
 	fn join<'a, T>(self, path: T) -> Self::Owned
 	where
@@ -136,6 +140,8 @@ impl<'p> LocAbleImpl<'p> for &'p typed_path::UnixPath {
 	unsafe fn from_encoded_bytes_unchecked(bytes: &'p [u8]) -> Self {
 		typed_path::UnixPath::new(bytes)
 	}
+
+	fn has_root(self) -> bool { self.has_root() }
 
 	fn join<'a, T>(self, path: T) -> Self::Owned
 	where

@@ -1,5 +1,6 @@
-use std::{collections::HashMap, fmt};
+use std::fmt;
 
+use hashbrown::HashMap;
 use serde::{Deserialize, Deserializer, Serialize, de::Visitor, ser::SerializeStruct};
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -16,7 +17,7 @@ pub struct Attrs {
 impl Attrs {
 	pub fn is_empty(&self) -> bool { *self == Self::default() }
 
-	pub fn len(&self) -> usize {
+	pub(crate) fn len(&self) -> usize {
 		let mut len = 4;
 		if let Some(size) = self.size {
 			len += size_of_val(&size);

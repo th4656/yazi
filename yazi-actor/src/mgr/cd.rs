@@ -6,12 +6,12 @@ use tokio_stream::{StreamExt, wrappers::UnboundedReceiverStream};
 use yazi_config::YAZI;
 use yazi_core::mgr::CdSource;
 use yazi_dds::Pubsub;
-use yazi_fs::{FilesOp, file::File, path::{clean_url, expand_url}};
-use yazi_macro::{act, err, input, render, succ};
+use yazi_fs::{FilesOp, path::{clean_url, expand_url}};
+use yazi_macro::{act, input, log_if_err, render, succ};
 use yazi_parser::mgr::CdForm;
 use yazi_proxy::{CmpProxy, MgrProxy};
 use yazi_shared::{Debounce, data::Data, url::{AsUrl, UrlBuf, UrlLike}};
-use yazi_vfs::{VfsFile, engine};
+use yazi_vfs::engine;
 use yazi_widgets::input::InputEvent;
 
 use crate::{Actor, Ctx};
@@ -37,20 +37,20 @@ impl Actor for Cd {
 		// Take parent to history
 		let tab = cx.tab_mut();
 		if let Some(t) = tab.parent.take() {
-			tab.history.insert(t.url.clone(), t);
+			tab.history.insert(t);
 		}
 
 		// Current
 		let rep = tab.history.remove_or(&form.target);
 		let rep = mem::replace(&mut tab.current, rep);
-		tab.history.insert(rep.url.clone(), rep);
+		tab.history.insert(rep);
 
 		// Parent
 		if let Some(parent) = form.target.parent() {
 			tab.parent = Some(tab.history.remove_or(parent));
 		}
 
-		err!(Pubsub::pub_after_cd(tab.id, tab.cwd()));
+		log_if_err!(Pubsub::pub_after_cd(tab.id, tab.cwd()));
 		act!(mgr:displace, cx)?;
 		act!(mgr:hidden, cx).ok();
 		act!(mgr:sort, cx).ok();
@@ -76,13 +76,13 @@ impl Cd {
 						let Ok(url) = engine::absolute(&url).await else { return };
 						let url = clean_url(url);
 
-						let Ok(file) = File::new(&url).await else { return };
+						let Ok(file) = engine::file(&url).await else { return };
 						if file.is_dir() {
 							return MgrProxy::cd(&url, CdSource::Cd);
 						}
 
-						if let Some((p, k)) = url.pair2() {
-							FilesOp::Upserting(p.into(), [(k.into(), file)].into()).emit();
+						if let Some((t, k)) = url.pair() {
+							FilesOp::Upserting(t.into(), [(k.into(), file)].into()).emit();
 						}
 						MgrProxy::reveal(url);
 					}

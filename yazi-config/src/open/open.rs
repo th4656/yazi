@@ -1,7 +1,7 @@
 use std::ops::Deref;
 
 use anyhow::Result;
-use indexmap::IndexMap;
+use indexmap::IndexSet;
 use serde::Deserialize;
 use yazi_codegen::DeserializeOver2;
 use yazi_fs::{cha::ChaType, file::File};
@@ -26,29 +26,43 @@ impl Deref for Open {
 }
 
 impl Open {
+	pub fn match_common(&self, targets: &[(File, &str)]) -> IndexSet<String> {
+		let mut targets = targets.iter();
+		let Some((file, mime)) = targets.next() else { return Default::default() };
+		let Some(first) = self.matches(file, mime) else { return Default::default() };
+
+		let mut common: IndexSet<_> = first.r#use.iter().cloned().collect();
+		for (file, mime) in targets {
+			let Some(rule) = self.matches(file, mime) else { return Default::default() };
+
+			common.retain(|name| rule.r#use.contains(name));
+			if common.is_empty() {
+				break;
+			}
+		}
+		common
+	}
+
 	pub fn match_dummy<U, M>(&self, url: U, mime: M) -> Option<OpenRuleArc>
 	where
 		U: AsUrl,
 		M: AsRef<str>,
 	{
 		let mime = mime.as_ref();
+
+		let is_dir = match mime.rsplit_once('/') {
+			Some((_, "")) => false,
+			Some(("folder", _)) => true,
+			Some((rest, _)) => rest.ends_with("/folder"),
+			None => false,
+		};
+
 		let file = File::from_dummy(
 			url.as_url().to_owned(),
-			Some(if mime.starts_with("folder/") { ChaType::Dir } else { ChaType::File }),
+			Some(if is_dir { ChaType::Dir } else { ChaType::File }),
 		);
 
 		self.matches(&file, mime)
-	}
-
-	pub fn match_common(&self, targets: &[(File, &str)]) -> impl Iterator<Item = OpenRuleArc> {
-		let mut seen: IndexMap<OpenRuleArc, usize> = IndexMap::new();
-		for (file, mime) in targets {
-			if let Some(rule) = self.matches(file, mime) {
-				*seen.entry(rule).or_default() += 1;
-			}
-		}
-
-		seen.into_iter().filter(|&(_, count)| count == targets.len()).map(|(rule, _)| rule)
 	}
 }
 

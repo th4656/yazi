@@ -1,17 +1,24 @@
-use std::{ops::Deref, sync::Arc};
+use std::ops::Deref;
 
+use hashbrown::HashMap;
 use serde::Deserialize;
-use yazi_shared::{auth::Auth, event::Cmd};
+use tokio::sync::OnceCell;
+use yazi_fs::engine::Capabilities;
+use yazi_shared::{auth::AuthArc, data::{Data, DataKey}, event::Cmd};
 
-#[derive(Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct ServiceLua {
-	#[serde(skip, default)]
-	pub auth: Arc<Auth>,
-	pub run:  Cmd,
+	#[serde(skip)]
+	pub(crate) auth: AuthArc,
+	#[serde(skip)]
+	pub caps:        OnceCell<Capabilities>,
+	run:             Cmd,
+	#[serde(flatten)]
+	pub opts:        HashMap<DataKey, Data>,
 }
 
 impl Deref for ServiceLua {
-	type Target = Auth;
+	type Target = Cmd;
 
-	fn deref(&self) -> &Self::Target { &self.auth }
+	fn deref(&self) -> &Self::Target { &self.run }
 }

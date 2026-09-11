@@ -76,10 +76,16 @@ where
 	#[inline]
 	pub fn as_inner(self) -> P { self.inner }
 
-	#[inline]
-	pub fn as_loc(self) -> Self { self }
+	pub(crate) fn ascend(self) -> Option<Self>
+	where
+		P: PathView<'p, P>,
+	{
+		let uri = self.uri().components().count().saturating_sub(1);
+		let urn = self.urn().components().count().saturating_sub(1);
+		Self::with(self.parent()?, uri, urn).ok()
+	}
 
-	pub fn bare<T>(path: T) -> Self
+	pub(crate) fn bare<T>(path: T) -> Self
 	where
 		T: PathView<'p, P>,
 	{
@@ -104,7 +110,7 @@ where
 	}
 
 	#[inline]
-	pub fn base(self) -> P {
+	pub(crate) fn base(self) -> P {
 		unsafe {
 			P::from_encoded_bytes_unchecked(
 				self.inner.as_encoded_bytes().get_unchecked(..self.inner.len() - self.uri),
@@ -112,7 +118,7 @@ where
 		}
 	}
 
-	pub fn floated<'a, T, S>(path: T, base: S) -> Self
+	pub(crate) fn floated<'a, T, S>(path: T, base: S) -> Self
 	where
 		T: PathView<'p, P>,
 		S: AsStrandView<'a, P::Strand<'a>>,
@@ -123,15 +129,12 @@ where
 	}
 
 	#[inline]
-	pub fn has_base(self) -> bool { self.inner.len() != self.uri }
+	pub(crate) fn has_base(self) -> bool { self.inner.len() != self.uri }
 
 	#[inline]
-	pub fn has_trail(self) -> bool { self.inner.len() != self.urn }
+	pub(crate) fn has_trail(self) -> bool { self.inner.len() != self.urn }
 
-	#[inline]
-	pub fn is_empty(self) -> bool { self.inner.len() == 0 }
-
-	pub fn new<'a, T, S>(path: T, base: S, trail: S) -> Self
+	pub(crate) fn new<'a, T, S>(path: T, base: S, trail: S) -> Self
 	where
 		T: PathView<'p, P>,
 		S: AsStrandView<'a, P::Strand<'a>>,
@@ -139,28 +142,25 @@ where
 		let mut loc = Self::bare(path);
 		loc.uri = loc.inner.strip_prefix(base).expect("Loc must start with the given base").len();
 		loc.urn = loc.inner.strip_prefix(trail).expect("Loc must start with the given trail").len();
+		debug_assert!(!loc.urn().has_root(), "Loc URN cannot include a root directory");
 		loc
 	}
 
 	#[inline]
-	pub fn parent(self) -> Option<P> { self.inner.parent() }
+	pub(crate) fn parent(self) -> Option<P> { self.inner.parent() }
 
-	pub fn saturated<'a, T>(path: T, kind: AuthKind) -> Self
+	pub(crate) fn saturated<'a, T>(path: T, kind: AuthKind) -> Self
 	where
 		T: PathView<'p, P>,
 	{
 		match kind {
-			AuthKind::Regular => Self::bare(path),
-			AuthKind::Search => Self::zeroed(path),
-			AuthKind::Mount => Self::zeroed(path),
-			AuthKind::Hub => Self::bare(path),
-			AuthKind::Scope => Self::bare(path),
-			AuthKind::Sftp => Self::bare(path),
+			AuthKind::Regular | AuthKind::Hub | AuthKind::Scope | AuthKind::Sftp => Self::bare(path),
+			AuthKind::View | AuthKind::Mount => Self::zeroed(path),
 		}
 	}
 
 	#[inline]
-	pub fn trail(self) -> P {
+	pub(crate) fn trail(self) -> P {
 		unsafe {
 			P::from_encoded_bytes_unchecked(
 				self.inner.as_encoded_bytes().get_unchecked(..self.inner.len() - self.urn),
@@ -169,7 +169,7 @@ where
 	}
 
 	#[inline]
-	pub fn triple(self) -> (P, P, P) {
+	pub(crate) fn triple(self) -> (P, P, P) {
 		let len = self.inner.len();
 
 		let base = ..len - self.uri;
@@ -186,7 +186,7 @@ where
 	}
 
 	#[inline]
-	pub fn uri(self) -> P {
+	pub(crate) fn uri(self) -> P {
 		unsafe {
 			P::from_encoded_bytes_unchecked(
 				self.inner.as_encoded_bytes().get_unchecked(self.inner.len() - self.uri..),
@@ -195,7 +195,7 @@ where
 	}
 
 	#[inline]
-	pub fn urn(self) -> P {
+	pub(crate) fn urn(self) -> P {
 		unsafe {
 			P::from_encoded_bytes_unchecked(
 				self.inner.as_encoded_bytes().get_unchecked(self.inner.len() - self.urn..),
@@ -203,7 +203,7 @@ where
 		}
 	}
 
-	pub fn with<T>(path: T, uri: usize, urn: usize) -> Result<Self>
+	pub(crate) fn with<T>(path: T, uri: usize, urn: usize) -> Result<Self>
 	where
 		T: PathView<'p, P>,
 	{
@@ -232,10 +232,14 @@ where
 				break;
 			}
 		}
+
+		if loc.urn().has_root() {
+			bail!("URN cannot include a root directory");
+		}
 		Ok(loc)
 	}
 
-	pub fn zeroed<T>(path: T) -> Self
+	pub(crate) fn zeroed<T>(path: T) -> Self
 	where
 		T: PathView<'p, P>,
 	{

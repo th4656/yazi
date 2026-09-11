@@ -45,9 +45,9 @@ impl Actor for Trigger {
 				cache.push(CmpItem { name: Default::default(), is_dir: true });
 			}
 
-			while let Ok(Some(ent)) = dir.next().await {
-				if let Ok(ft) = ent.file_type().await {
-					cache.push(CmpItem { name: ent.name().into_owned(), is_dir: ft.is_dir() });
+			while let Ok(Some(dent)) = dir.next().await {
+				if let Ok(ft) = dent.file_type().await {
+					cache.push(CmpItem { name: dent.name().into_owned(), is_dir: ft.is_dir() });
 				}
 			}
 
@@ -73,7 +73,7 @@ impl Trigger {
 
 		// Spec
 		let spec = spec.zeroed();
-		if spec.kind.is_local() && path.as_strand() == "~" {
+		if spec.is_local() && path.as_strand() == "~" {
 			return None; // We don't complete a `~`, but `~/`
 		}
 
@@ -99,7 +99,7 @@ mod tests {
 	fn compare(s: &str, parent: &str, child: &str) {
 		let (mut p, c) = Trigger::split_url(s).unwrap();
 		if let Ok(u) = p.try_strip_prefix(yazi_fs::CWD.load().as_ref()) {
-			p = UrlBuf::Regular(u.as_os().unwrap().into());
+			p = u.as_os().unwrap().into();
 		}
 		assert_eq!((p, c.to_str().unwrap()), (parent.parse().unwrap(), child));
 	}

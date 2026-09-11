@@ -1,29 +1,37 @@
 use tokio::sync::mpsc;
 use yazi_macro::{emit, relay};
-use yazi_shared::{id::Id, url::UrlBuf};
+use yazi_shared::{event::Replier, id::Id, url::UrlBuf};
 use yazi_shim::SStr;
 
 pub struct AppProxy;
 
 impl AppProxy {
+	pub async fn resume() {
+		let (tx, mut rx) = mpsc::unbounded_channel();
+		emit!(Call(relay!(app:resume).with_replier(tx)));
+		rx.recv().await;
+	}
+
 	pub async fn stop() {
 		let (tx, mut rx) = mpsc::unbounded_channel();
 		emit!(Call(relay!(app:stop).with_replier(tx)));
 		rx.recv().await;
 	}
 
-	pub async fn resume() {
-		let (tx, mut rx) = mpsc::unbounded_channel();
-		emit!(Call(relay!(app:resume).with_replier(tx)));
-		rx.recv().await;
+	pub fn stop_with(replier: Option<Replier>) {
+		let mut action = relay!(app:stop);
+		if let Some(replier) = replier {
+			action = action.with_replier(replier);
+		}
+		emit!(Call(action));
 	}
 }
 
 // --- Tasks
-pub struct TasksProxy;
+pub(crate) struct TasksProxy;
 
 impl TasksProxy {
-	pub fn update_succeed<I>(id: Id, urls: I, track: bool)
+	pub(crate) fn update_succeed<I>(id: Id, urls: I, track: bool)
 	where
 		I: IntoIterator,
 		I::Item: Into<UrlBuf>,

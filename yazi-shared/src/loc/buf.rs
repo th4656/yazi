@@ -2,7 +2,7 @@ use std::{cmp, ffi::OsStr, fmt::{self, Debug, Formatter}, hash::{Hash, Hasher}, 
 
 use anyhow::Result;
 
-use crate::{auth::AuthKind, loc::{Loc, LocAble, LocAbleImpl, LocBufAble, LocBufAbleImpl}, path::{DynPath, PathDyn, PathView, SetNameError}, strand::AsStrandView};
+use crate::{auth::AuthKind, loc::{Loc, LocAble, LocAbleImpl, LocBufAble, LocBufAbleImpl, LocLike}, path::{DynPath, PathDyn, SetNameError}, strand::AsStrandView};
 
 #[derive(Clone, Default, Eq, PartialEq)]
 pub struct LocBuf<P = std::path::PathBuf> {
@@ -59,7 +59,6 @@ where
 impl<P> Hash for LocBuf<P>
 where
 	P: LocBufAble + LocBufAbleImpl,
-	for<'a> &'a P: PathView<'a, P::Borrowed<'a>>,
 {
 	fn hash<H: Hasher>(&self, state: &mut H) { self.as_loc().hash(state) }
 }
@@ -67,7 +66,6 @@ where
 impl<P> Debug for LocBuf<P>
 where
 	P: LocBufAble + LocBufAbleImpl + Debug,
-	for<'a> &'a P: PathView<'a, P::Borrowed<'a>>,
 {
 	fn fmt(&self, f: &mut Formatter) -> fmt::Result {
 		f.debug_struct("LocBuf")
@@ -81,10 +79,9 @@ where
 impl<P> From<P> for LocBuf<P>
 where
 	P: LocBufAble + LocBufAbleImpl,
-	for<'a> &'a P: PathView<'a, P::Borrowed<'a>>,
 {
 	fn from(path: P) -> Self {
-		let Loc { inner, uri, urn, _phantom } = Loc::bare(&path);
+		let Loc { inner, uri, urn, _phantom } = Loc::bare(path.borrow());
 		let len = inner.len();
 
 		let mut bytes = path.into_encoded_bytes();
@@ -100,14 +97,13 @@ impl<T: ?Sized + AsRef<OsStr>> From<&T> for LocBuf<std::path::PathBuf> {
 impl<P> LocBuf<P>
 where
 	P: LocBufAble + LocBufAbleImpl,
-	for<'a> &'a P: PathView<'a, P::Borrowed<'a>>,
 {
-	pub fn new<'a, S>(path: P, base: S, trail: S) -> Self
+	pub(crate) fn new<'a, S>(path: P, base: S, trail: S) -> Self
 	where
 		S: for<'b> AsStrandView<'a, <P::Borrowed<'b> as LocAble<'b>>::Strand<'a>>,
 	{
 		let loc = Self::from(path);
-		let Loc { inner, uri, urn, _phantom } = Loc::new(&loc.inner, base, trail);
+		let Loc { inner, uri, urn, _phantom } = Loc::new(loc.inner.borrow(), base, trail);
 
 		debug_assert!(inner.as_encoded_bytes() == loc.inner.as_encoded_bytes());
 		Self { inner: loc.inner, uri, urn }
@@ -118,29 +114,29 @@ where
 		for<'a> P::Borrowed<'a>: LocAble<'a>,
 	{
 		let loc = Self::from(path);
-		let Loc { inner, uri, urn, _phantom } = Loc::with(&loc.inner, uri, urn)?;
+		let Loc { inner, uri, urn, _phantom } = Loc::with(loc.inner.borrow(), uri, urn)?;
 
 		debug_assert!(inner.as_encoded_bytes() == loc.inner.as_encoded_bytes());
 		Ok(Self { inner: loc.inner, uri, urn })
 	}
 
-	pub fn zeroed<T>(path: T) -> Self
+	pub(crate) fn zeroed<T>(path: T) -> Self
 	where
 		T: Into<P>,
 	{
 		let loc = Self::from(path.into());
-		let Loc { inner, uri, urn, _phantom } = Loc::zeroed(&loc.inner);
+		let Loc { inner, uri, urn, _phantom } = Loc::zeroed(loc.inner.borrow());
 
 		debug_assert!(inner.as_encoded_bytes() == loc.inner.as_encoded_bytes());
 		Self { inner: loc.inner, uri, urn }
 	}
 
-	pub fn floated<'a, S>(path: P, base: S) -> Self
+	pub(crate) fn floated<'a, S>(path: P, base: S) -> Self
 	where
 		S: for<'b> AsStrandView<'a, <P::Borrowed<'b> as LocAble<'b>>::Strand<'a>>,
 	{
 		let loc = Self::from(path);
-		let Loc { inner, uri, urn, _phantom } = Loc::floated(&loc.inner, base);
+		let Loc { inner, uri, urn, _phantom } = Loc::floated(loc.inner.borrow(), base);
 
 		debug_assert!(inner.as_encoded_bytes() == loc.inner.as_encoded_bytes());
 		Self { inner: loc.inner, uri, urn }
@@ -148,16 +144,16 @@ where
 
 	pub fn saturated(path: P, kind: AuthKind) -> Self {
 		let loc = Self::from(path);
-		let Loc { inner, uri, urn, _phantom } = Loc::saturated(&loc.inner, kind);
+		let Loc { inner, uri, urn, _phantom } = Loc::saturated(loc.inner.borrow(), kind);
 
 		debug_assert!(inner.as_encoded_bytes() == loc.inner.as_encoded_bytes());
 		Self { inner: loc.inner, uri, urn }
 	}
 
 	#[inline]
-	pub fn as_loc<'a>(&'a self) -> Loc<'a, P::Borrowed<'a>> {
+	pub(crate) fn as_loc<'a>(&'a self) -> Loc<'a, P::Borrowed<'a>> {
 		Loc {
-			inner:    self.inner.path_view(),
+			inner:    self.inner.borrow(),
 			uri:      self.uri,
 			urn:      self.urn,
 			_phantom: PhantomData,
@@ -167,7 +163,7 @@ where
 	#[inline]
 	pub fn into_inner(self) -> P { self.inner }
 
-	pub fn try_set_name<'a, T>(&mut self, name: T) -> Result<(), SetNameError>
+	pub(crate) fn try_set_name<'a, T>(&mut self, name: T) -> Result<(), SetNameError>
 	where
 		T: AsStrandView<'a, P::Strand<'a>>,
 	{
@@ -197,7 +193,7 @@ where
 	}
 
 	#[inline]
-	pub fn rebase<'a, 'b>(&'a self, base: P::Borrowed<'b>) -> Self
+	pub(crate) fn rebase<'a, 'b>(&'a self, base: P::Borrowed<'b>) -> Self
 	where
 		'a: 'b,
 		for<'c> <P::Borrowed<'c> as LocAble<'c>>::Owned: Into<Self>,
@@ -208,9 +204,6 @@ where
 	}
 
 	#[inline]
-	pub fn parent(&self) -> Option<P::Borrowed<'_>> { self.as_loc().parent() }
-
-	#[inline]
 	fn mutate<T, F: FnOnce(&mut P) -> T>(&mut self, f: F) -> T {
 		let mut inner = mem::take(&mut self.inner);
 		let result = f(&mut inner);
@@ -219,41 +212,12 @@ where
 	}
 }
 
-// FIXME: macro
-impl<P> LocBuf<P>
-where
-	P: LocBufAble + LocBufAbleImpl,
-	for<'a> &'a P: PathView<'a, P::Borrowed<'a>>,
-{
-	#[inline]
-	pub fn uri(&self) -> P::Borrowed<'_> { self.as_loc().uri() }
-
-	#[inline]
-	pub fn urn(&self) -> P::Borrowed<'_> { self.as_loc().urn() }
-
-	#[inline]
-	pub fn base(&self) -> P::Borrowed<'_> { self.as_loc().base() }
-
-	#[inline]
-	pub fn has_base(&self) -> bool { self.as_loc().has_base() }
-
-	#[inline]
-	pub fn trail(&self) -> P::Borrowed<'_> { self.as_loc().trail() }
-
-	#[inline]
-	pub fn has_trail(&self) -> bool { self.as_loc().has_trail() }
-}
-
-impl LocBuf<std::path::PathBuf> {
-	pub const fn empty() -> Self { Self { inner: std::path::PathBuf::new(), uri: 0, urn: 0 } }
-}
-
 #[cfg(test)]
 mod tests {
 	use std::path::{Path, PathBuf};
 
 	use super::*;
-	use crate::url::{UrlBuf, UrlLike};
+	use crate::{loc::LocLike, url::{UrlBuf, UrlLike}};
 
 	#[test]
 	fn test_new() {
@@ -351,7 +315,7 @@ mod tests {
 			let b: UrlBuf = expected.parse()?;
 			a.try_set_name(name).unwrap();
 			assert_eq!(
-				(a.name(), format!("{a:?}").replace(r"\", "/")),
+				(a.name(), format!("{a}").replace(r"\", "/")),
 				(b.name(), expected.replace(r"\", "/"))
 			);
 		}

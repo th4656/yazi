@@ -1,11 +1,11 @@
 use anyhow::Result;
-use yazi_macro::{render, succ};
+use yazi_macro::{act, render, succ};
 use yazi_shared::{data::Data, replace_cow};
 
 use crate::input::{Input, InputMode, op::InputOp};
 
 impl Input {
-	pub fn replace(&mut self, _: ()) -> Result<Data> {
+	pub(crate) fn replace(&mut self, _: ()) -> Result<Data> {
 		let snap = self.snap_mut();
 		if snap.mode == InputMode::Normal {
 			snap.op = InputOp::None;
@@ -15,7 +15,22 @@ impl Input {
 		succ!();
 	}
 
-	pub fn replace_str(&mut self, s: &str) -> Result<Data> {
+	pub(crate) fn insert_str(&mut self, s: &str) -> Result<Data> {
+		let s = replace_cow(replace_cow(s, "\r", " "), "\n", " ");
+
+		let snap = self.snap_mut();
+		if snap.cursor < 1 {
+			snap.value.insert_str(0, &s);
+		} else {
+			snap.value.insert_str(snap.idx(snap.cursor).unwrap(), &s);
+		}
+
+		act!(r#move, self, s.chars().count() as isize)?;
+		self.flush_all();
+		succ!(render!());
+	}
+
+	pub(crate) fn replace_str(&mut self, s: &str) -> Result<Data> {
 		let s = replace_cow(replace_cow(s, "\r", " "), "\n", " ");
 
 		let snap = self.snap_mut();

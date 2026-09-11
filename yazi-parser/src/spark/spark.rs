@@ -10,6 +10,7 @@ pub enum Spark<'a> {
 	// App
 	AppAcceptPayload(yazi_dds::Payload<'a>),
 	AppBootstrap(crate::VoidForm),
+	AppClipboard(crate::app::ClipboardForm),
 	AppDeprecate(crate::app::DeprecateForm),
 	AppDnd(crate::app::DndForm),
 	AppFocus(crate::VoidForm),
@@ -17,11 +18,13 @@ pub enum Spark<'a> {
 	AppMouse(crate::app::MouseForm),
 	AppPlugin(crate::app::PluginForm),
 	AppPluginDo(crate::app::PluginForm),
+	AppPassthrough(crate::app::PassthroughForm),
 	AppQuit(crate::app::QuitForm),
+	AppReport(yazi_term::event::Report),
 	AppReflow(crate::app::ReflowForm),
 	AppResize(crate::app::ReflowForm),
 	AppResume(crate::app::ReflowForm),
-	AppStop(crate::VoidForm),
+	AppStop(crate::app::StopForm),
 	AppTheme(crate::VoidForm),
 	AppTitle(crate::app::TitleForm),
 	AppUpdateProgress(crate::app::UpdateProgressForm),
@@ -43,9 +46,9 @@ pub enum Spark<'a> {
 	Escape(crate::mgr::EscapeForm),
 	EscapeFilter(crate::VoidForm),
 	EscapeFind(crate::VoidForm),
-	EscapeSearch(crate::VoidForm),
 	EscapeSelect(crate::VoidForm),
 	EscapeVisual(crate::VoidForm),
+	EscapeView(crate::VoidForm),
 	Filter(crate::mgr::FilterForm),
 	FilterDo(crate::mgr::FilterForm),
 	Find(crate::mgr::FindForm),
@@ -69,9 +72,6 @@ pub enum Spark<'a> {
 	RemoveDo(crate::mgr::RemoveDoForm),
 	Rename(crate::mgr::RenameForm),
 	Reveal(crate::mgr::RevealForm),
-	Search(crate::mgr::SearchForm),
-	SearchDo(crate::mgr::SearchForm),
-	SearchStop(crate::VoidForm),
 	Seek(crate::mgr::SeekForm),
 	Shell(crate::mgr::ShellForm),
 	Sort(crate::mgr::SortForm),
@@ -93,8 +93,9 @@ pub enum Spark<'a> {
 	UpdateSpotted(crate::mgr::UpdateSpottedForm),
 	UpdateYanked(crate::mgr::UpdateYankedForm<'a>),
 	Upload(crate::mgr::UploadForm),
+	VisualArrow(crate::mgr::VisualArrowForm),
 	VisualMode(crate::mgr::VisualModeForm),
-	Watch(crate::VoidForm),
+	Watch(crate::mgr::WatchForm),
 	Yank(crate::mgr::YankForm),
 
 	// Cmp
@@ -154,6 +155,7 @@ pub enum Spark<'a> {
 	TasksProcessOpen(crate::tasks::ProcessOpenForm),
 	TasksShow(crate::VoidForm),
 	TasksSpawn(crate::tasks::SpawnForm),
+	TasksOutput(crate::tasks::OutputForm),
 	TasksUpdateSucceed(crate::tasks::UpdateSucceedForm),
 
 	// Which
@@ -180,6 +182,10 @@ impl<'a> Spark<'a> {
 			// mgr:stash
 			IndStash => Self::Stash(<_>::from_lua(value, lua)?),
 			RelayStash => Self::Stash(<_>::from_lua(value, lua)?),
+			// mgr:update_files
+			RelayUpdateFiles => Self::UpdateFiles(<_>::from_lua(value, lua)?),
+			// mgr:watch
+			IndWatch => Self::Watch(<_>::from_lua(value, lua)?),
 			// mgr:quit
 			KeyQuit => Self::Quit(<_>::from_lua(value, lua)?),
 
@@ -205,6 +211,7 @@ impl<'a> IntoLua for Spark<'a> {
 			// App
 			Self::AppAcceptPayload(b) => b.into_lua(lua),
 			Self::AppBootstrap(b) => b.into_lua(lua),
+			Self::AppClipboard(b) => b.into_lua(lua),
 			Self::AppDeprecate(b) => b.into_lua(lua),
 			Self::AppDnd(b) => b.into_lua(lua),
 			Self::AppFocus(b) => b.into_lua(lua),
@@ -212,7 +219,9 @@ impl<'a> IntoLua for Spark<'a> {
 			Self::AppMouse(b) => b.into_lua(lua),
 			Self::AppPlugin(b) => b.into_lua(lua),
 			Self::AppPluginDo(b) => b.into_lua(lua),
+			Self::AppPassthrough(b) => b.into_lua(lua),
 			Self::AppQuit(b) => b.into_lua(lua),
+			Self::AppReport(b) => b.into_lua(lua),
 			Self::AppReflow(b) => b.into_lua(lua),
 			Self::AppResize(b) => b.into_lua(lua),
 			Self::AppResume(b) => b.into_lua(lua),
@@ -238,9 +247,9 @@ impl<'a> IntoLua for Spark<'a> {
 			Self::Escape(b) => b.into_lua(lua),
 			Self::EscapeFilter(b) => b.into_lua(lua),
 			Self::EscapeFind(b) => b.into_lua(lua),
-			Self::EscapeSearch(b) => b.into_lua(lua),
 			Self::EscapeSelect(b) => b.into_lua(lua),
 			Self::EscapeVisual(b) => b.into_lua(lua),
+			Self::EscapeView(b) => b.into_lua(lua),
 			Self::Filter(b) => b.into_lua(lua),
 			Self::FilterDo(b) => b.into_lua(lua),
 			Self::Find(b) => b.into_lua(lua),
@@ -264,9 +273,6 @@ impl<'a> IntoLua for Spark<'a> {
 			Self::RemoveDo(b) => b.into_lua(lua),
 			Self::Rename(b) => b.into_lua(lua),
 			Self::Reveal(b) => b.into_lua(lua),
-			Self::Search(b) => b.into_lua(lua),
-			Self::SearchDo(b) => b.into_lua(lua),
-			Self::SearchStop(b) => b.into_lua(lua),
 			Self::Seek(b) => b.into_lua(lua),
 			Self::Shell(b) => b.into_lua(lua),
 			Self::Sort(b) => b.into_lua(lua),
@@ -288,6 +294,7 @@ impl<'a> IntoLua for Spark<'a> {
 			Self::UpdateSpotted(b) => b.into_lua(lua),
 			Self::UpdateYanked(b) => b.into_lua(lua),
 			Self::Upload(b) => b.into_lua(lua),
+			Self::VisualArrow(b) => b.into_lua(lua),
 			Self::VisualMode(b) => b.into_lua(lua),
 			Self::Watch(b) => b.into_lua(lua),
 			Self::Yank(b) => b.into_lua(lua),
@@ -349,6 +356,7 @@ impl<'a> IntoLua for Spark<'a> {
 			Self::TasksProcessOpen(b) => b.into_lua(lua),
 			Self::TasksShow(b) => b.into_lua(lua),
 			Self::TasksSpawn(b) => b.into_lua(lua),
+			Self::TasksOutput(b) => b.into_lua(lua),
 			Self::TasksUpdateSucceed(b) => b.into_lua(lua),
 
 			// Which
@@ -362,37 +370,38 @@ try_from_spark!(
 	crate::VoidForm,
 	app:bootstrap,
 	app:focus,
-	app:stop,
 	app:theme,
 	mgr:back,
 	mgr:bulk_rename,
 	mgr:enter,
 	mgr:escape_filter,
 	mgr:escape_find,
-	mgr:escape_search,
 	mgr:escape_select,
 	mgr:escape_visual,
+	mgr:escape_view,
 	mgr:follow,
 	mgr:forward,
 	mgr:leave,
 	mgr:refresh,
-	mgr:search_stop,
 	mgr:suspend,
 	mgr:unyank,
-	mgr:watch,
 	input:remember,
 	which:dismiss
 );
 
 // App
 try_from_spark!(crate::ArrowForm, mgr:arrow, mgr:tab_swap);
+try_from_spark!(crate::app::ClipboardForm, app:clipboard);
 try_from_spark!(crate::app::DeprecateForm, app:deprecate);
 try_from_spark!(crate::app::DndForm, app:dnd);
 try_from_spark!(crate::app::LuaForm, app:lua);
 try_from_spark!(crate::app::MouseForm, app:mouse);
 try_from_spark!(crate::app::PluginForm, app:plugin, app:plugin_do);
+try_from_spark!(crate::app::PassthroughForm, app:passthrough);
 try_from_spark!(crate::app::QuitForm, app:quit, mgr:quit);
+try_from_spark!(yazi_term::event::Report, app:report);
 try_from_spark!(crate::app::ReflowForm, app:reflow, app:resize, app:resume);
+try_from_spark!(crate::app::StopForm, app:stop);
 try_from_spark!(crate::app::TitleForm, app:title);
 try_from_spark!(crate::app::UpdateProgressForm, app:update_progress);
 try_from_spark!(crate::cmp::CloseForm, cmp:close);
@@ -428,7 +437,6 @@ try_from_spark!(crate::mgr::RemoveForm, mgr:remove);
 try_from_spark!(crate::mgr::RemoveDoForm, mgr:remove_do);
 try_from_spark!(crate::mgr::RenameForm, mgr:rename);
 try_from_spark!(crate::mgr::RevealForm, mgr:reveal);
-try_from_spark!(crate::mgr::SearchForm, mgr:search, mgr:search_do);
 try_from_spark!(crate::mgr::SeekForm, mgr:seek);
 try_from_spark!(crate::mgr::ShellForm, mgr:shell);
 try_from_spark!(crate::mgr::SortForm, mgr:sort);
@@ -447,7 +455,9 @@ try_from_spark!(crate::mgr::UpdatePeekedForm, mgr:update_peeked);
 try_from_spark!(crate::mgr::UpdateSpottedForm, mgr:update_spotted);
 try_from_spark!(crate::mgr::UpdateYankedForm<'a>, mgr:update_yanked);
 try_from_spark!(crate::mgr::UploadForm, mgr:upload);
+try_from_spark!(crate::mgr::VisualArrowForm, mgr:visual_arrow);
 try_from_spark!(crate::mgr::VisualModeForm, mgr:visual_mode);
+try_from_spark!(crate::mgr::WatchForm, mgr:watch);
 try_from_spark!(crate::mgr::YankForm, mgr:yank);
 try_from_spark!(crate::notify::PushForm, notify:push);
 try_from_spark!(crate::notify::TickForm, notify:tick);
@@ -456,6 +466,7 @@ try_from_spark!(crate::pick::ShowForm, pick:show);
 try_from_spark!(crate::spot::CopyForm, spot:copy);
 try_from_spark!(crate::tasks::ProcessOpenForm, tasks:process_open);
 try_from_spark!(crate::tasks::SpawnForm, tasks:spawn);
+try_from_spark!(crate::tasks::OutputForm, tasks:output);
 try_from_spark!(crate::tasks::UpdateSucceedForm, tasks:update_succeed);
 try_from_spark!(crate::which::ActivateForm, which:activate);
 try_from_spark!(yazi_dds::Payload<'a>, app:accept_payload);

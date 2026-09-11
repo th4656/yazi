@@ -2,11 +2,11 @@ use std::path::PrefixComponent;
 
 use anyhow::Result;
 
-use crate::{auth::Auth, path::{self, PathDynError}, strand::Strand};
+use crate::{auth::AuthArc, path::{self, PathDynError}, strand::Strand};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Component<'a> {
-	Auth(&'a Auth),
+	Auth(&'a AuthArc),
 	Prefix(PrefixComponent<'a>),
 	RootDir,
 	CurDir,
@@ -27,7 +27,7 @@ impl<'a> From<path::Component<'a>> for Component<'a> {
 }
 
 impl<'a> Component<'a> {
-	pub fn downgrade(self) -> Option<path::Component<'a>> {
+	fn downgrade(self) -> Option<path::Component<'a>> {
 		Some(match self {
 			Self::Auth(_) => None?,
 			Self::Prefix(p) => path::Component::Prefix(p),

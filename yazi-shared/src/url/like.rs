@@ -2,7 +2,7 @@ use std::{borrow::Cow, ffi::OsStr, path::Path};
 
 use anyhow::Result;
 
-use crate::{auth::{Auth, AuthKind}, path::{DynPathRef, EndsWithError, JoinError, PathDyn, StartsWithError, StripPrefixError}, spec::Spec, strand::{AsStrand, Strand}, url::{AsUrl, Components, Display, Url, UrlBuf, UrlCow}};
+use crate::{auth::{AuthArc, AuthKind}, path::{DynPathRef, EndsWithError, JoinError, PathDyn, StartsWithError, StripPrefixError}, spec::Spec, strand::{AsStrand, Strand}, url::{AsUrl, Components, Display, Encode, Url, UrlBuf, UrlCow}};
 
 pub trait UrlLike
 where
@@ -10,7 +10,7 @@ where
 {
 	fn as_local(&self) -> Option<&Path> { self.as_url().as_local() }
 
-	fn auth(&self) -> &Auth { self.as_url().auth() }
+	fn auth(&self) -> &AuthArc { self.as_url().auth() }
 
 	fn base(&self) -> Url<'_> { self.as_url().base() }
 
@@ -20,9 +20,9 @@ where
 
 	fn display(&self) -> Display<'_> { Display(self.as_url()) }
 
-	fn ext(&self) -> Option<Strand<'_>> { self.as_url().ext() }
+	fn encode(&self) -> Encode<'_> { self.as_url().encode() }
 
-	fn entry_key(&self) -> PathDyn<'_> { self.as_url().entry_key() }
+	fn ext(&self) -> Option<Strand<'_>> { self.as_url().ext() }
 
 	fn has_base(&self) -> bool { self.as_url().has_base() }
 
@@ -34,7 +34,9 @@ where
 
 	fn is_regular(&self) -> bool { self.as_url().is_regular() }
 
-	fn is_search(&self) -> bool { self.as_url().is_search() }
+	fn is_view(&self) -> bool { self.as_url().is_view() }
+
+	fn key(&self) -> PathDyn<'_> { self.as_url().key() }
 
 	fn kind(&self) -> AuthKind { self.as_url().kind() }
 
@@ -46,9 +48,9 @@ where
 
 	fn pair(&self) -> Option<(Url<'_>, PathDyn<'_>)> { self.as_url().pair() }
 
-	fn pair2(&self) -> Option<(Url<'_>, PathDyn<'_>)> { self.as_url().pair2() }
-
 	fn parent(&self) -> Option<Url<'_>> { self.as_url().parent() }
+
+	fn physical(&self) -> Url<'_> { self.as_url().physical() }
 
 	fn spec(&self) -> Spec { self.as_url().spec() }
 

@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use yazi_binding::style::StyleFlat;
+use yazi_binding::style::Style;
 use yazi_fs::file::File;
 
 use crate::{Pattern, Selectable};
@@ -7,11 +7,11 @@ use crate::{Pattern, Selectable};
 #[derive(Deserialize)]
 pub struct FiletypeRule {
 	#[serde(default)]
-	is:        super::Is,
+	is:               super::Is,
 	#[serde(flatten)]
-	selector:  crate::Selector,
+	selector:         crate::Selector,
 	#[serde(flatten)]
-	pub style: StyleFlat,
+	pub(crate) style: Style,
 }
 
 impl Selectable for FiletypeRule {

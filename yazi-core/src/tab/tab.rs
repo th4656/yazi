@@ -1,8 +1,6 @@
 use std::borrow::Cow;
 
-use anyhow::Result;
 use ratatui_core::layout::Rect;
-use tokio::task::JoinHandle;
 use yazi_binding::position::{Origin, Position};
 use yazi_config::LAYOUT;
 use yazi_fs::file::File;
@@ -26,7 +24,6 @@ pub struct Tab {
 	pub spot:    Spot,
 	pub preview: Preview,
 	pub finder:  Option<Finder>,
-	pub search:  Option<JoinHandle<Result<()>>>,
 }
 
 impl Default for Tab {
@@ -47,16 +44,12 @@ impl Default for Tab {
 			spot:    Default::default(),
 			preview: Default::default(),
 			finder:  Default::default(),
-			search:  Default::default(),
 		}
 	}
 }
 
 impl Tab {
-	pub fn shutdown(&mut self) {
-		self.search.take().map(|h| h.abort());
-		self.preview.reset();
-	}
+	pub fn shutdown(&mut self) { self.preview.reset(); }
 }
 
 impl Tab {
@@ -81,11 +74,8 @@ impl Tab {
 	#[inline]
 	pub fn hovered_url(&self) -> Option<&UrlBuf> { self.current.hovered_url() }
 
-	#[inline]
-	pub fn hovered_mut(&mut self) -> Option<&mut File> { self.current.hovered_mut() }
-
-	pub fn hovered_rect(&self) -> Option<Rect> {
-		let y = self.current.entries.position(self.hovered()?.entry_key())? - self.current.offset;
+	fn hovered_rect(&self) -> Option<Rect> {
+		let y = self.current.entries.position(self.hovered()?.key())? - self.current.offset;
 
 		let mut rect = LAYOUT.get().current;
 		rect.y = rect.y.saturating_sub(1) + y as u16;
@@ -93,7 +83,7 @@ impl Tab {
 		Some(rect)
 	}
 
-	pub fn hovered_rect_based(&self, pos: Position) -> Rect {
+	pub(crate) fn hovered_rect_based(&self, pos: Position) -> Rect {
 		let area = TERM.dimension().area();
 		if let Some(r) = self.hovered_rect() {
 			pos.sticky(r, area)
@@ -115,17 +105,6 @@ impl Tab {
 			Box::new(self.hovered_url().into_iter())
 		} else {
 			Box::new(self.selected.urls())
-		}
-	}
-
-	pub fn hovered_and_selected(&self) -> Box<dyn Iterator<Item = &UrlBuf> + '_> {
-		let Some(h) = self.hovered() else {
-			return Box::new([UrlBuf::new()].into_iter().chain(self.selected.urls()));
-		};
-		if self.selected.is_empty() {
-			Box::new([&h.url, &h.url].into_iter())
-		} else {
-			Box::new([&h.url].into_iter().chain(self.selected.urls()))
 		}
 	}
 

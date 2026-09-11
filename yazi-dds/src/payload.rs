@@ -2,11 +2,11 @@ use std::{fmt::Display, io::Write, str::FromStr};
 
 use anyhow::{Result, anyhow};
 use mlua::{IntoLua, Lua, Value};
-use yazi_boot::BOOT;
+use yazi_boot::{BOOT, ID};
 use yazi_macro::{emit, impl_data_any, relay};
 use yazi_shared::{event::ActionCow, id::Id};
 
-use crate::{ID, ember::Ember};
+use crate::ember::Ember;
 
 #[derive(Clone, Debug)]
 pub struct Payload<'a> {
@@ -105,6 +105,7 @@ impl Display for Payload<'_> {
 			Ember::Download(b) => serde_json::to_string(b),
 			Ember::Input(b) => serde_json::to_string(b),
 			Ember::Mount(b) => serde_json::to_string(b),
+			Ember::Theme(b) => serde_json::to_string(b),
 			Ember::Custom(b) => serde_json::to_string(b),
 		};
 

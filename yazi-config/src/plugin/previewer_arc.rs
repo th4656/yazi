@@ -2,6 +2,7 @@ use std::{ops::{Deref, DerefMut}, sync::Arc};
 
 use mlua::{FromLua, Lua, LuaSerdeExt, UserData, UserDataFields, Value};
 use serde::Deserialize;
+use yazi_shared::sendable::Sendable;
 use yazi_shim::mlua::UserDataFieldsExt;
 
 use crate::{Mixable, plugin::Previewer};
@@ -23,7 +24,11 @@ impl From<Previewer> for PreviewerArc {
 	fn from(value: Previewer) -> Self { Self(value.into()) }
 }
 
-impl Mixable for PreviewerArc {}
+impl Mixable for PreviewerArc {
+	fn any_file(&self) -> bool { self.0.any_file() }
+
+	fn any_dir(&self) -> bool { self.0.any_dir() }
+}
 
 impl FromLua for PreviewerArc {
 	fn from_lua(value: Value, lua: &Lua) -> mlua::Result<Self> {
@@ -36,5 +41,6 @@ impl UserData for PreviewerArc {
 		fields.add_field_method_get("id", |_, me| Ok(me.id));
 
 		fields.add_cached_field("name", |lua, me| lua.create_string(&*me.name));
+		fields.add_cached_field("args", |lua, me| Sendable::args_to_table_ref(lua, &me.args));
 	}
 }

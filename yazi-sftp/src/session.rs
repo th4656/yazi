@@ -1,5 +1,6 @@
-use std::{any::TypeId, collections::HashMap, io::{self, ErrorKind}, sync::Arc, time::Duration};
+use std::{any::TypeId, io::{self, ErrorKind}, sync::Arc, time::Duration};
 
+use hashbrown::HashMap;
 use parking_lot::Mutex;
 use russh::{ChannelStream, client::Msg};
 use serde::Serialize;
@@ -36,11 +37,7 @@ impl Session {
 		}
 
 		async fn write(writer: &mut WriteHalf<ChannelStream<Msg>>, buf: Vec<u8>) -> io::Result<()> {
-			if buf.is_empty() {
-				Err(io::Error::from(ErrorKind::BrokenPipe))
-			} else {
-				writer.write_all(&buf).await
-			}
+			if buf.is_empty() { Err(ErrorKind::BrokenPipe.into()) } else { writer.write_all(&buf).await }
 		}
 
 		let me_ = me.clone();
@@ -88,7 +85,7 @@ impl Session {
 		me
 	}
 
-	pub async fn send<'a, I, O>(self: &Arc<Self>, input: I) -> Result<O, Error>
+	pub(crate) async fn send<'a, I, O>(self: &Arc<Self>, input: I) -> Result<O, Error>
 	where
 		I: Into<Packet<'a>> + Serialize,
 		O: TryFrom<Packet<'static>, Error = Error> + 'static,
@@ -96,7 +93,7 @@ impl Session {
 		self.send_with_timeout(input, Duration::from_secs(45)).await
 	}
 
-	pub fn send_sync<'a, I>(self: &Arc<Self>, input: I) -> Result<Receiver, Error>
+	pub(crate) fn send_sync<'a, I>(self: &Arc<Self>, input: I) -> Result<Receiver, Error>
 	where
 		I: Into<Packet<'a>> + Serialize,
 	{
@@ -113,7 +110,7 @@ impl Session {
 		Ok(Receiver::new(self, id, rx))
 	}
 
-	pub async fn send_with_timeout<'a, I, O>(
+	pub(crate) async fn send_with_timeout<'a, I, O>(
 		self: &Arc<Self>,
 		input: I,
 		timeout: Duration,

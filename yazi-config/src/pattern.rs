@@ -2,13 +2,13 @@ use std::{fmt::Debug, str::FromStr};
 
 use anyhow::{Result, bail};
 use globset::{Candidate, GlobBuilder};
-use serde::Deserialize;
+use serde_with::DeserializeFromStr;
+use strum::EnumIs;
 use yazi_shared::{auth::Auth, url::AsUrl};
 
 use crate::Mixable;
 
-#[derive(Clone, Deserialize)]
-#[serde(try_from = "String")]
+#[derive(Clone, DeserializeFromStr)]
 pub struct Pattern {
 	inner:      globset::GlobMatcher,
 	scheme:     PatternScheme,
@@ -57,7 +57,7 @@ impl Pattern {
 		}
 	}
 
-	pub fn match_mime(&self, mime: impl AsRef<str>) -> bool {
+	pub(crate) fn match_mime(&self, mime: impl AsRef<str>) -> bool {
 		self.is_star || (!mime.as_ref().is_empty() && self.inner.is_match(mime.as_ref()))
 	}
 }
@@ -98,26 +98,18 @@ impl FromStr for Pattern {
 	}
 }
 
-// FIXME: remove
-impl TryFrom<String> for Pattern {
-	type Error = anyhow::Error;
-
-	fn try_from(s: String) -> Result<Self, Self::Error> { Self::from_str(s.as_str()) }
-}
-
 impl Mixable for Pattern {
-	fn any_file(&self) -> bool { self.is_star && !self.is_dir }
+	fn any_file(&self) -> bool { self.is_star && !self.is_dir && self.scheme.is_any() }
 
-	fn any_dir(&self) -> bool { self.is_star && self.is_dir }
+	fn any_dir(&self) -> bool { self.is_star && self.is_dir && self.scheme.is_any() }
 }
 
 // --- Scheme
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, EnumIs)]
 enum PatternScheme {
 	Any,
 	Local,
 	Remote,
-	Virtual,
 
 	Custom(String),
 }
@@ -132,7 +124,6 @@ impl PatternScheme {
 			"*" => Self::Any,
 			"local" => Self::Local,
 			"remote" => Self::Remote,
-			"virtual" => Self::Virtual,
 
 			"" => bail!("Invalid URL pattern: scheme is empty"),
 			other => Self::Custom(other.to_owned()),
@@ -145,9 +136,8 @@ impl PatternScheme {
 	fn matches(&self, auth: &Auth) -> bool {
 		match self {
 			Self::Any => true,
-			Self::Local => auth.kind.is_local(),
-			Self::Remote => auth.kind.is_remote(),
-			Self::Virtual => auth.kind.is_virtual(),
+			Self::Local => auth.is_local(),
+			Self::Remote => auth.is_remote(),
 			Self::Custom(name) => auth.scheme == name,
 		}
 	}

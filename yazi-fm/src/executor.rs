@@ -50,6 +50,7 @@ impl<'a> Executor<'a> {
 		on!(update_progress);
 		on!(lua);
 		on!(deprecate);
+		on!(passthrough);
 		on!(theme);
 		on!(stop);
 		on!(quit);
@@ -103,6 +104,7 @@ impl<'a> Executor<'a> {
 		// Toggle
 		on!(toggle);
 		on!(toggle_all);
+		on!(visual_arrow);
 		on!(visual_mode);
 
 		// Operation
@@ -121,8 +123,6 @@ impl<'a> Executor<'a> {
 		on!(shell);
 		on!(hidden);
 		on!(linemode);
-		on!(search);
-		on!(search_do);
 		on!(bulk_exit);
 		on!(bulk_rename);
 		on!(bulk_create);
@@ -173,6 +173,7 @@ impl<'a> Executor<'a> {
 			};
 		}
 
+		on!(output);
 		on!(update_succeed);
 		on!(spawn);
 

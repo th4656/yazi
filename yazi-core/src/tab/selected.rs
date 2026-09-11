@@ -1,6 +1,6 @@
 use hashbrown::HashMap;
 use indexmap::{IndexMap, map::MutableKeys};
-use yazi_fs::{FilesOp, file::{File, FileCov}};
+use yazi_fs::file::{File, FileCov};
 use yazi_shared::{timestamp_us, url::{AsUrl, Url, UrlBuf, UrlBufCov, UrlCov, UrlCovMapExt, UrlLike, UrlMapExt}};
 
 #[derive(Default)]
@@ -16,7 +16,7 @@ impl Selected {
 
 	pub fn files(&self) -> impl Iterator<Item = &File> { self.inner.keys().map(|f| &f.0) }
 
-	pub fn urls(&self) -> impl Iterator<Item = &UrlBuf> { self.inner.keys().map(|f| &f.url) }
+	pub(crate) fn urls(&self) -> impl Iterator<Item = &UrlBuf> { self.inner.keys().map(|f| &f.url) }
 
 	pub fn contains(&self, url: impl AsUrl) -> bool {
 		self.inner.contains_key(&UrlCov::new(url.as_url()))
@@ -132,16 +132,11 @@ impl Selected {
 		self.parents.clear();
 	}
 
-	pub fn apply_op(&mut self, op: &FilesOp) {
-		let (removal, addition) = op.diff_recoverable(self.urls());
-		if !removal.is_empty() {
-			self.remove_many(&removal);
-		}
-		if !addition.is_empty() {
-			self.add_many(addition);
-		}
-		for f in op.files() {
-			self.inner.get_full_mut2(&UrlCov::new(&f.url)).map(|(_, k, _)| *k = f.into());
+	pub(crate) fn upsert(&mut self, file: &File) {
+		if let Some((_, key, _)) = self.inner.get_full_mut2(&UrlCov::new(&file.url)) {
+			*key = file.into();
+		} else {
+			self.add(file);
 		}
 	}
 }

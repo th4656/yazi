@@ -1,13 +1,12 @@
-use std::{path::Path, time::Duration};
+use std::{io, path::Path, time::Duration};
 
 use hashbrown::HashSet;
 use notify::{PollWatcher, RecommendedWatcher, RecursiveMode, Result, Watcher};
 use tokio::{pin, sync::mpsc::{self, UnboundedReceiver}};
 use tokio_stream::{StreamExt, wrappers::UnboundedReceiverStream};
-use tracing::error;
-use yazi_fs::{FilesOp, engine::{self, Engine}, file::File, mounts::PARTITIONS};
+use yazi_fs::{FilesOp, engine::{self, Engine}, mounts::PARTITIONS};
+use yazi_macro::error;
 use yazi_shared::url::{UrlBuf, UrlLike};
-use yazi_vfs::VfsFile;
 
 use crate::{Reporter, WATCHER, Watchee};
 
@@ -46,11 +45,11 @@ impl Local {
 		if let Some(primary) = self.primary.as_mut().filter(|_| !*alt) {
 			match primary.watch(path, RecursiveMode::NonRecursive) {
 				Ok(()) => return Ok(()),
-				Err(e) => tracing::warn!("Failed to watch {path:?} with primary watcher: {e:?}"),
+				Err(e) => yazi_macro::warn!("Failed to watch {path:?} with primary watcher: {e:?}"),
 			}
 		}
 
-		tracing::debug!("Watching {path:?} with alternative watcher");
+		yazi_macro::debug!("Watching {path:?} with alternative watcher");
 		*alt = true;
 		self.alternative.watch(path, RecursiveMode::NonRecursive)
 	}
@@ -96,21 +95,28 @@ impl Local {
 			let _permit = WATCHER.acquire().await.unwrap();
 			let mut ops = Vec::with_capacity(urls.len());
 
-			for u in urls {
-				let Some((parent, key)) = u.pair2() else { continue };
-				let Ok(file) = File::new(&u).await else {
-					ops.push(FilesOp::Deleting(parent.into(), [key.into()].into()));
-					continue;
+			for url in urls {
+				let Some(path) = url.as_local() else { continue };
+				let Some((trail, key)) = url.pair() else { continue };
+
+				let file = match engine::local::Local::regular(path).file().await {
+					Ok(file) => file,
+					Err(e) if e.kind() == io::ErrorKind::NotFound => {
+						ops.push(FilesOp::Deleting(trail.into(), [key.into()].into()));
+						continue;
+					}
+					Err(e) => {
+						yazi_macro::error!("Failed to update {url}: {e:?}");
+						continue;
+					}
 				};
 
-				if let Some(p) = file.url.as_local()
-					&& !engine::local::match_name_case(p).await
-				{
-					ops.push(FilesOp::Deleting(parent.into(), [key.into()].into()));
+				if !engine::local::match_name_case(path).await {
+					ops.push(FilesOp::Deleting(trail.into(), [key.into()].into()));
 					continue;
 				}
 
-				ops.push(FilesOp::Upserting(parent.into(), [(key.into(), file)].into()));
+				ops.push(FilesOp::Upserting(trail.into(), [(key.into(), file)].into()));
 			}
 
 			FilesOp::mutate(ops);

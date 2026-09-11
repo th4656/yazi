@@ -3,10 +3,10 @@ use std::{any::TypeId, mem};
 use ansi_to_tui::IntoText;
 use mlua::{AnyUserData, ExternalError, ExternalResult, FromLua, IntoLua, Lua, LuaString, MetaMethod, Table, UserData, UserDataMethods, Value};
 use ratatui_core::widgets::Widget;
-use yazi_shim::SStr;
+use yazi_shim::{fs::Error, ratatui::TextIter};
 
 use super::{Area, Line, Span, Wrap};
-use crate::{Error, elements::{Align, Spatial}};
+use crate::elements::{Align, Spatial};
 
 const EXPECTED: &str = "expected a string, Line, Span, or a table of them";
 
@@ -15,9 +15,9 @@ pub struct Text {
 	area: Area,
 
 	// TODO: block
-	pub inner:  ratatui_core::text::Text<'static>,
-	pub wrap:   Wrap,
-	pub scroll: ratatui_core::layout::Position,
+	pub(crate) inner: ratatui_core::text::Text<'static>,
+	wrap:             Wrap,
+	scroll:           ratatui_core::layout::Position,
 }
 
 impl Text {
@@ -37,14 +37,31 @@ impl Text {
 		self.wrap = wrap.into();
 		self
 	}
+
+	pub(crate) fn line_count(&self, width: u16) -> usize {
+		let Some(wrap) = self.wrap.0 else {
+			return self.inner.height();
+		};
+
+		let mut lines = TextIter::new(&self.inner, wrap, width);
+		let mut count = 0;
+		while lines.next().is_some() {
+			count += 1;
+		}
+		count
+	}
+
+	pub(crate) fn needs_upgrade(&self) -> bool {
+		self.wrap.is_some() || self.scroll != Default::default()
+	}
 }
 
 impl From<ratatui_core::text::Text<'static>> for Text {
 	fn from(inner: ratatui_core::text::Text<'static>) -> Self { Self { inner, ..Default::default() } }
 }
 
-impl From<SStr> for Text {
-	fn from(value: SStr) -> Self { Self { inner: value.into(), ..Default::default() } }
+impl From<String> for Text {
+	fn from(value: String) -> Self { Self { inner: value.into(), ..Default::default() } }
 }
 
 impl TryFrom<Table> for Text {
@@ -58,7 +75,7 @@ impl TryFrom<Table> for Text {
 				Value::UserData(ud) => match ud.type_id() {
 					Some(t) if t == TypeId::of::<Span>() => ud.take::<Span>()?.0.into(),
 					Some(t) if t == TypeId::of::<Line>() => ud.take::<Line>()?.inner,
-					Some(t) if t == TypeId::of::<Error>() => ud.take::<Error>()?.into_string().into(),
+					Some(t) if t == TypeId::of::<Error>() => ud.take::<Error>()?.to_string().into(),
 					_ => Err(EXPECTED.into_lua_err())?,
 				},
 				_ => Err(EXPECTED.into_lua_err())?,
@@ -99,10 +116,10 @@ impl Widget for Text {
 	where
 		Self: Sized,
 	{
-		if self.wrap.is_none() && self.scroll == Default::default() {
-			self.inner.render(rect, buf);
-		} else {
+		if self.needs_upgrade() {
 			ratatui_widgets::paragraph::Paragraph::from(self).render(rect, buf);
+		} else {
+			self.inner.render(rect, buf);
 		}
 	}
 }
@@ -112,10 +129,10 @@ impl Widget for &Text {
 	where
 		Self: Sized,
 	{
-		if self.wrap.is_none() && self.scroll == Default::default() {
-			(&self.inner).render(rect, buf);
-		} else {
+		if self.needs_upgrade() {
 			ratatui_widgets::paragraph::Paragraph::from(self.clone()).render(rect, buf);
+		} else {
+			(&self.inner).render(rect, buf);
 		}
 	}
 }
@@ -128,7 +145,7 @@ impl TryFrom<&AnyUserData> for Text {
 			Some(t) if t == TypeId::of::<Self>() => return value.take(),
 			Some(t) if t == TypeId::of::<Line>() => value.take::<Line>()?.inner.into(),
 			Some(t) if t == TypeId::of::<Span>() => value.take::<Span>()?.0.into(),
-			Some(t) if t == TypeId::of::<Error>() => value.take::<Error>()?.into_string().into(),
+			Some(t) if t == TypeId::of::<Error>() => value.take::<Error>()?.to_string().into(),
 			_ => Err(EXPECTED.into_lua_err())?,
 		};
 

@@ -1,21 +1,33 @@
-use std::{borrow::Cow, hash::{Hash, Hasher}, ops::Deref, path::Path};
+use std::{borrow::Cow, hash::{Hash, Hasher}, ops::Deref, path::{Path, PathBuf}};
 
+use hashbrown::Equivalent;
 use serde::{Deserialize, Serialize};
-use yazi_shared::{path::{PathBufDyn, PathDyn}, strand::Strand, url::{AsUrl, Url, UrlBuf, UrlLike}};
+use yazi_shared::{path::PathDyn, strand::Strand, url::{AsUrl, Url, UrlBuf, UrlLike}};
 
-use crate::cha::{Cha, ChaType};
+use crate::{FsUrl, cha::{Cha, ChaType}, file::FileExtra};
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct File {
-	pub url:     UrlBuf,
-	pub cha:     Cha,
-	pub link_to: Option<PathBufDyn>,
+	pub url:   UrlBuf,
+	pub cha:   Cha,
+	#[serde(flatten)]
+	pub extra: FileExtra,
 }
 
 impl Deref for File {
 	type Target = Cha;
 
 	fn deref(&self) -> &Self::Target { &self.cha }
+}
+
+impl PartialEq for File {
+	fn eq(&self, other: &Self) -> bool { self.url == other.url }
+}
+
+impl Eq for File {}
+
+impl Hash for File {
+	fn hash<H: Hasher>(&self, state: &mut H) { self.url.hash(state); }
 }
 
 impl From<&Self> for File {
@@ -38,17 +50,41 @@ impl AsUrl for &File {
 	fn as_url(&self) -> Url<'_> { self.url.as_url() }
 }
 
+impl Equivalent<File> for Url<'_> {
+	fn equivalent(&self, key: &File) -> bool { *self == key.url }
+}
+
+impl Equivalent<File> for UrlBuf {
+	fn equivalent(&self, key: &File) -> bool { self == &key.url }
+}
+
 impl File {
+	#[inline]
+	pub fn cache(&self) -> Option<PathBuf> {
+		if self.is_dir() { self.url.cache_bucket() } else { self.url.cache_entry() }
+	}
+
 	#[inline]
 	pub fn from_dummy(url: impl Into<UrlBuf>, r#type: Option<ChaType>) -> Self {
 		let url = url.into();
 		let cha = Cha::from_dummy(&url, r#type);
-		Self { url, cha, link_to: None }
+		Self { url, cha, extra: Default::default() }
 	}
 
 	#[inline]
-	pub fn chdir(&self, wd: &Path) -> Self {
-		Self { url: self.url.rebase(wd), cha: self.cha, link_to: self.link_to.clone() }
+	pub(crate) fn chdir(&self, wd: &Path) -> Self {
+		Self { url: self.url.rebase(wd), cha: self.cha, extra: self.extra.clone() }
+	}
+
+	#[inline]
+	pub fn content_path(&self) -> Cow<'_, Path> {
+		if let Some(backing) = self.extra.backing() {
+			backing.into()
+		} else if let Some(local) = self.url.as_local() {
+			local.into()
+		} else {
+			self.cache().expect("non-local URL should have a cache path").into()
+		}
 	}
 }
 
@@ -58,27 +94,14 @@ impl File {
 	pub fn url_owned(&self) -> UrlBuf { self.url.clone() }
 
 	#[inline]
-	pub fn uri(&self) -> PathDyn<'_> { self.url.uri() }
-
-	#[inline]
 	pub fn urn(&self) -> PathDyn<'_> { self.url.urn() }
 
 	#[inline]
-	pub fn entry_key(&self) -> PathDyn<'_> { self.url.entry_key() }
+	pub fn key(&self) -> PathDyn<'_> { self.url.key() }
 
 	#[inline]
 	pub fn name(&self) -> Option<Strand<'_>> { self.url.name() }
 
 	#[inline]
 	pub fn stem(&self) -> Option<Strand<'_>> { self.url.stem() }
-}
-
-impl Hash for File {
-	fn hash<H: Hasher>(&self, state: &mut H) {
-		self.url.hash(state);
-		self.cha.len.hash(state);
-		self.cha.btime.hash(state);
-		self.cha.ctime.hash(state);
-		self.cha.mtime.hash(state);
-	}
 }

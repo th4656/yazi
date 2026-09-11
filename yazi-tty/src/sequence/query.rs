@@ -1,5 +1,8 @@
 use std::fmt::{self, Display};
 
+use base64::{Engine, engine::general_purpose};
+use yazi_ffi::shm::NamedSharedMemory;
+
 /// XTVERSION request (secondary DA)
 pub struct RequestXtVersion;
 
@@ -12,6 +15,13 @@ pub struct RequestCellPixelSize;
 
 impl Display for RequestCellPixelSize {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { f.write_str("\x1b[16t") }
+}
+
+/// Request the current color scheme
+pub struct RequestColorScheme;
+
+impl Display for RequestColorScheme {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { f.write_str("\x1b[?996n") }
 }
 
 /// Request background color via OSC 11
@@ -29,11 +39,34 @@ impl Display for RequestDA1 {
 }
 
 /// Query Kitty graphics protocol capabilities
-pub struct KittyGraphicsQuery;
+pub struct RequestKgp;
 
-impl Display for KittyGraphicsQuery {
+impl Display for RequestKgp {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		f.write_str("\x1b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\")
+		f.write_str("\x1b_Gi=278941603,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\")
+	}
+}
+
+/// Query Kitty graphics protocol capabilities through shared memory.
+pub struct RequestKgpShm {
+	shm: Option<NamedSharedMemory>,
+}
+
+impl RequestKgpShm {
+	pub fn new() -> Self { Self { shm: NamedSharedMemory::new(&[0; 3]).ok() } }
+}
+
+impl Display for RequestKgpShm {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		if let Some(shm) = &self.shm {
+			write!(
+				f,
+				"\x1b_Gi=916472805,s=1,v=1,a=q,t=s,f=24,S=3;{}\x1b\\",
+				general_purpose::STANDARD.encode(&shm.name),
+			)?;
+		}
+
+		Ok(())
 	}
 }
 
@@ -49,11 +82,4 @@ pub struct RequestCursorBlink;
 
 impl Display for RequestCursorBlink {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { f.write_str("\x1b[?12$p") }
-}
-
-/// Device Status Report (DSR)
-pub struct RequestDeviceStatus;
-
-impl Display for RequestDeviceStatus {
-	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { f.write_str("\x1b[5n") }
 }

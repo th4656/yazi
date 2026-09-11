@@ -1,9 +1,11 @@
+use std::iter;
+
 use anyhow::Result;
-use yazi_core::tab::Folder;
+use yazi_core::{Invalidator, Reconciler};
 use yazi_fs::FilesOp;
 use yazi_macro::{act, render, succ};
-use yazi_parser::mgr::UpdateFilesForm;
-use yazi_shared::{data::Data, url::{UrlLike, UrlMapExt}};
+use yazi_parser::{mgr::UpdateFilesForm, spark::SparkKind};
+use yazi_shared::{Source, data::Data, url::UrlLike};
 use yazi_watcher::local::LINKED;
 
 use crate::{Actor, Ctx};
@@ -16,32 +18,51 @@ impl Actor for UpdateFiles {
 	const NAME: &str = "update_files";
 
 	fn act(cx: &mut Ctx, form: Self::Form) -> Result<Data> {
-		let revision = cx.current().entries.revision;
 		let linked: Vec<_> = LINKED.read().from_dir(form.op.cwd()).map(|u| form.op.chdir(u)).collect();
+		let ops: Vec<_> = iter::once(form.op).chain(linked).collect();
 
-		for op in [form.op].into_iter().chain(linked) {
-			cx.mgr.yanked.apply_op(&op);
-			Self::update_tab(cx, op).ok();
+		for op in &ops {
+			Invalidator::new(&mut cx.mgr).apply(op);
+			Reconciler::new(cx.tab, &mut cx.mgr).apply(op);
+		}
+		render!(cx.mgr.yanked.catchup_revision(false));
+
+		let tabs = cx.tabs().indices_or_active(form.tabs);
+		let Some((&last, tabs)) = tabs.split_last() else { succ!() };
+
+		for &tab in tabs {
+			cx.with(tab, |cx| Self::update_tab(cx, ops.iter().cloned()))?;
+		}
+		cx.with(last, |cx| Self::update_tab(cx, ops))
+	}
+
+	fn hook(cx: &Ctx, _: &Self::Form) -> Option<SparkKind> {
+		(cx.source() == Source::Relay).then_some(SparkKind::RelayUpdateFiles)
+	}
+}
+
+impl UpdateFiles {
+	fn update_tab(cx: &mut Ctx, ops: impl IntoIterator<Item = FilesOp>) -> Result<Data> {
+		let revision = cx.current().entries.revision;
+
+		for op in ops {
+			Self::update_pane(cx, op).ok();
 		}
 
-		render!(cx.mgr.yanked.catchup_revision(false));
 		act!(mgr:hidden, cx).ok();
 		act!(mgr:sort, cx).ok();
 
 		if revision != cx.current().entries.revision {
 			act!(mgr:hover, cx)?;
 			act!(mgr:peek, cx)?;
-			act!(mgr:watch, cx)?;
+			act!(mgr:watch, cx).ok();
 			act!(mgr:update_paged, cx)?;
 		}
 		succ!();
 	}
-}
 
-impl UpdateFiles {
-	fn update_tab(cx: &mut Ctx, op: FilesOp) -> Result<Data> {
+	fn update_pane(cx: &mut Ctx, op: FilesOp) -> Result<Data> {
 		let url = op.cwd();
-		cx.tab_mut().selected.apply_op(&op);
 
 		if url == cx.cwd() {
 			Self::update_current(cx, op)
@@ -57,7 +78,7 @@ impl UpdateFiles {
 	fn update_parent(cx: &mut Ctx, op: FilesOp) -> Result<Data> {
 		let tab = cx.tab_mut();
 
-		let key = tab.current.url.entry_key();
+		let key = tab.current.url.key();
 		let leave = matches!(op, FilesOp::Deleting(_, ref keys) if keys.contains(&key));
 
 		if let Some(f) = tab.parent.as_mut() {
@@ -87,7 +108,7 @@ impl UpdateFiles {
 
 	fn update_hovered(cx: &mut Ctx, op: FilesOp) -> Result<Data> {
 		let (id, url) = (cx.tab().id, op.cwd());
-		let folder = cx.tab_mut().history.get_or_insert_with(url, |u| Folder::from(u));
+		let (folder, _) = cx.tab_mut().history.ensure(url);
 
 		if folder.update_pub(id, op) {
 			act!(mgr:peek, cx, true)?;
@@ -96,12 +117,18 @@ impl UpdateFiles {
 	}
 
 	fn update_history(cx: &mut Ctx, op: FilesOp) -> Result<Data> {
-		let tab = &mut cx.tab_mut();
-		let leave = tab.parent.as_ref().and_then(|f| f.url.pair2()).is_some_and(
-			|(pp, key)| matches!(&op, FilesOp::Deleting(parent, keys) if parent == pp && keys.contains(&key)),
+		let tab = cx.tab_mut();
+		let leave = tab.parent.as_ref().and_then(|f| f.url.pair()).is_some_and(
+			|(t, key)| matches!(&op, FilesOp::Deleting(trail, keys) if trail == t && keys.contains(&key)),
 		);
 
-		tab.history.get_or_insert_with(op.cwd(), |u| Folder::from(u)).update_pub(tab.id, op);
+		let (folder, evicted) = tab.history.ensure(op.cwd());
+		folder.update_pub(tab.id, op);
+
+		if let Some(evicted) = evicted.filter(|f| tab.hovered_url() == Some(&f.url)) {
+			tab.history.insert(evicted);
+		}
+
 		if leave {
 			act!(mgr:leave, cx)?;
 		}

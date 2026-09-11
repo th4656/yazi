@@ -21,7 +21,7 @@ function M:peek(job)
 	for i = job.skip + 1, #items do
 		local f = items[i]
 		local icon = th.icon:match(File {
-			url = Url(f.path),
+			url = Url(ya.clone(f.path)),
 			cha = Cha { mode = tonumber(f.is_dir and "40700" or "100644", 8) },
 		})
 
@@ -317,7 +317,7 @@ function M.treelize(items, tops, parents)
 	end
 
 	local buf, it = {}, f.path.parent
-	while it and it ~= tops[#tops] do
+	while it and #it ~= 0 and it ~= tops[#tops] do
 		buf[#buf + 1], it = it, it.parent
 	end
 	for i = #buf, 1, -1 do

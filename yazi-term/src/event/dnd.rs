@@ -1,10 +1,7 @@
-use std::str::SplitWhitespace;
-
-use base64::Engine;
+use base64::{Engine, engine::general_purpose::STANDARD_NO_PAD_INDIFFERENT};
 use strum::{FromRepr, IntoStaticStr};
-use yazi_shim::BASE64_SANE;
 
-use crate::parser::StateOsc72;
+use crate::{event::mime::MimeList, parser::StateOsc72};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DndEvent {
@@ -27,68 +24,68 @@ pub enum DndEvent {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DndDragOffer {
-	pub x: u32,
-	pub y: u32,
+	x: u32,
+	y: u32,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DndDragAccept {
-	pub idx: u8,
+	idx: u8,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DndDragChange {
-	pub op: DndOp,
+	op: DndOp,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DndDragEnd {
-	pub canceled: bool,
+	canceled: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DndDragSend {
-	pub idx: u8,
+	idx: u8,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DndDragError {
-	pub idx:  u8,
-	pub name: String,
-	pub desc: String,
+	idx:  u8,
+	name: String,
+	desc: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DndDropEnter {
-	pub x:     u32,
-	pub y:     u32,
-	pub op:    DndOp,
-	pub mimes: DndMimeList,
+	x:     u32,
+	y:     u32,
+	op:    DndOp,
+	mimes: MimeList,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DndDropReady {
-	pub x:     u32,
-	pub y:     u32,
-	pub op:    DndOp,
-	pub mimes: DndMimeList,
+	x:     u32,
+	y:     u32,
+	op:    DndOp,
+	mimes: MimeList,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DndDropArrive {
-	pub idx:  u8,
-	pub data: Vec<u8>,
+	idx:             u8,
+	pub(crate) data: Vec<u8>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DndDropError {
-	pub idx:  u8,
-	pub name: String,
-	pub desc: String,
+	idx:  u8,
+	name: String,
+	desc: String,
 }
 
 impl DndEvent {
-	pub fn r#type(&self) -> &'static str {
+	pub(crate) fn r#type(&self) -> &'static str {
 		match self {
 			Self::DragOffer(_) => "offer",
 			Self::DragAccept(_) => "accept",
@@ -106,7 +103,7 @@ impl DndEvent {
 		}
 	}
 
-	pub fn x(&self) -> Option<u32> {
+	pub(crate) fn x(&self) -> Option<u32> {
 		match self {
 			Self::DragOffer(e) => Some(e.x),
 			Self::DropEnter(e) => Some(e.x),
@@ -115,7 +112,7 @@ impl DndEvent {
 		}
 	}
 
-	pub fn y(&self) -> Option<u32> {
+	pub(crate) fn y(&self) -> Option<u32> {
 		match self {
 			Self::DragOffer(e) => Some(e.y),
 			Self::DropEnter(e) => Some(e.y),
@@ -124,7 +121,7 @@ impl DndEvent {
 		}
 	}
 
-	pub fn idx(&self) -> Option<u8> {
+	pub(crate) fn idx(&self) -> Option<u8> {
 		match self {
 			Self::DragAccept(e) => Some(e.idx),
 			Self::DragSend(e) => Some(e.idx),
@@ -135,7 +132,7 @@ impl DndEvent {
 		}
 	}
 
-	pub fn op(&self) -> Option<DndOp> {
+	pub(crate) fn op(&self) -> Option<DndOp> {
 		match self {
 			Self::DragChange(e) => Some(e.op),
 			Self::DropEnter(e) => Some(e.op),
@@ -144,7 +141,7 @@ impl DndEvent {
 		}
 	}
 
-	pub fn mimes(&self) -> Option<&DndMimeList> {
+	pub(crate) fn mimes(&self) -> Option<&MimeList> {
 		match self {
 			Self::DropEnter(e) => Some(&e.mimes),
 			Self::DropReady(e) => Some(&e.mimes),
@@ -185,17 +182,17 @@ impl DndEvent {
 				x:     s.x?.try_into().ok()?,
 				y:     s.y?.try_into().ok()?,
 				op:    DndOp::from_repr(s.op?)?,
-				mimes: DndMimeList::new(s.payload)?,
+				mimes: MimeList::new(s.payload)?,
 			}),
 			b'M' => Self::DropReady(DndDropReady {
 				x:     s.x?.try_into().ok()?,
 				y:     s.y?.try_into().ok()?,
 				op:    DndOp::from_repr(s.op?)?,
-				mimes: DndMimeList::new(s.payload)?,
+				mimes: MimeList::new(s.payload)?,
 			}),
 			b'r' => Self::DropArrive(DndDropArrive {
 				idx:  s.x?.try_into().ok()?,
-				data: BASE64_SANE.decode(&s.payload).ok()?,
+				data: STANDARD_NO_PAD_INDIFFERENT.decode(&s.payload).ok()?,
 			}),
 			b'R' => {
 				let (name, desc) = parse_error(s.payload)?;
@@ -209,6 +206,7 @@ impl DndEvent {
 
 // --- Operation
 #[derive(Clone, Copy, Debug, Eq, FromRepr, IntoStaticStr, PartialEq)]
+#[strum(serialize_all = "lowercase")]
 #[repr(u8)]
 pub enum DndOp {
 	Copy   = 1,
@@ -217,14 +215,6 @@ pub enum DndOp {
 }
 
 // --- MIME list
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DndMimeList(String);
-
-impl DndMimeList {
-	pub fn new(b: Vec<u8>) -> Option<Self> { Some(Self(String::from_utf8(b).ok()?)) }
-
-	pub fn iter(&self) -> SplitWhitespace<'_> { self.0.split_whitespace() }
-}
 
 // --- Error payload parsing
 fn parse_error(payload: Vec<u8>) -> Option<(String, String)> {

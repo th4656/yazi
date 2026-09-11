@@ -124,8 +124,9 @@ progress_error  = { fg = "yellow", bg = "red" }
 # : Which {{{
 
 [which]
+border          = { fg = "blue" }
 cols            = 3
-mask            = { bg = "black" }
+mask            = {}
 cand            = { fg = "lightcyan" }
 rest            = { fg = "darkgray" }
 desc            = { fg = "lightmagenta" }
@@ -234,18 +235,31 @@ hovered = { reversed = true, bold = true }
 # : }}}
 
 
+# : Search {{{
+
+[fd]
+title    = "Search via fd:"
+position = { at = "top-center", y = 2, w = 50, h = 3 }
+
+[rg]
+title    = "Search via rg:"
+position = { at = "top-center", y = 2, w = 50, h = 3 }
+
+# : }}}
+
+
 # : File-specific styles {{{
 
 [filetype]
 rules = [
 	# Image
-	{ mime = "image/*", fg = "yellow" },
+	{ mime = "**/image/*", fg = "yellow" },
 	# Media
-	{ mime = "{audio,video}/*", fg = "magenta" },
+	{ mime = "**/{audio,video}/*", fg = "magenta" },
 	# Archive
-	{ mime = "application/{zip,rar,7z*,tar,gzip,xz,zstd,bzip*,lzma,compress,archive,cpio,arj,xar,ms-cab*}", fg = "red" },
+	{ mime = "**/application/{zip,rar,7z*,tar,gzip,xz,zstd,bzip*,lzma,compress,archive,cpio,arj,xar,ms-cab*}", fg = "red" },
 	# Document
-	{ mime = "application/{pdf,doc,rtf}", fg = "cyan" },
+	{ mime = "**/application/{pdf,doc,rtf}", fg = "cyan" },
 	# Virtual file system
 	{ mime = "vfs/{absent,stale}", fg = "gray" },
 	# Special file

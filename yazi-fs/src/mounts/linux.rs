@@ -3,7 +3,7 @@ use std::{borrow::Cow, ffi::{OsStr, OsString}, os::{fd::AsFd, unix::{ffi::{OsStr
 use anyhow::{Context, Result};
 use hashbrown::{HashMap, HashSet};
 use tokio::{io::{Interest, unix::AsyncFd}, time::sleep};
-use tracing::error;
+use yazi_macro::error;
 use yazi_shared::{natsort, replace_cow, replace_vec_cow};
 
 use super::{Locked, Partition, Partitions};
@@ -148,9 +148,9 @@ impl Partitions {
 			return map;
 		};
 
-		for entry in it.flatten() {
-			let Ok(meta) = std::fs::metadata(entry.path()) else { continue };
-			let name = entry.file_name();
+		for dent in it.flatten() {
+			let Ok(meta) = std::fs::metadata(dent.path()) else { continue };
+			let name = dent.file_name();
 			map.insert(
 				(meta.dev(), meta.ino()),
 				match replace_vec_cow(name.as_bytes(), br"\x20", b" ") {

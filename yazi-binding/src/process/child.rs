@@ -1,11 +1,11 @@
 use std::{ops::DerefMut, process::ExitStatus, time::Duration};
 
-use futures::future::try_join3;
 use mlua::{ExternalError, IntoLua, IntoLuaMulti, LuaString, Table, UserData, UserDataMethods, Value};
-use tokio::{io::{self, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter}, process::{ChildStderr, ChildStdin, ChildStdout}, select};
+use tokio::{io::{self, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter}, process::{ChildStderr, ChildStdin, ChildStdout}, select, try_join};
+use yazi_shim::fs::Error;
 
 use super::Status;
-use crate::{Error, process::Output};
+use crate::process::Output;
 
 pub struct Child {
 	inner:      tokio::process::Child,
@@ -13,22 +13,13 @@ pub struct Child {
 	stdout:     Option<BufReader<ChildStdout>>,
 	stderr:     Option<BufReader<ChildStderr>>,
 	#[cfg(windows)]
-	job_handle: Option<std::os::windows::io::RawHandle>,
-}
-
-#[cfg(windows)]
-impl Drop for Child {
-	fn drop(&mut self) {
-		if let Some(h) = self.job_handle.take() {
-			unsafe { windows_sys::Win32::Foundation::CloseHandle(h) };
-		}
-	}
+	job_handle: Option<std::os::windows::io::OwnedHandle>,
 }
 
 impl Child {
-	pub fn new(
+	pub(crate) fn new(
 		mut inner: tokio::process::Child,
-		#[cfg(windows)] job_handle: Option<std::os::windows::io::RawHandle>,
+		#[cfg(windows)] job_handle: Option<std::os::windows::io::OwnedHandle>,
 	) -> Self {
 		let stdin = inner.stdin.take().map(BufWriter::new);
 		let stdout = inner.stdout.take().map(BufReader::new);
@@ -43,7 +34,7 @@ impl Child {
 		}
 	}
 
-	pub(super) async fn wait(&mut self) -> io::Result<ExitStatus> {
+	async fn wait(&mut self) -> io::Result<ExitStatus> {
 		drop(self.stdin.take());
 		self.inner.wait().await
 	}
@@ -88,7 +79,7 @@ impl Child {
 		let mut stdout = self.stdout.take();
 		let mut stderr = self.stderr.take();
 
-		let result = try_join3(self.inner.wait(), read(&mut stdout), read(&mut stderr)).await?;
+		let result = try_join!(self.inner.wait(), read(&mut stdout), read(&mut stderr))?;
 		Ok(std::process::Output { status: result.0, stdout: result.1, stderr: result.2 })
 	}
 }
@@ -139,7 +130,7 @@ impl UserData for Child {
 			};
 			match stdin.write_all(&src.as_bytes()).await {
 				Ok(()) => true.into_lua_multi(&lua),
-				Err(e) => (false, Error::Io(e)).into_lua_multi(&lua),
+				Err(e) => (false, Error::from(e)).into_lua_multi(&lua),
 			}
 		});
 		methods.add_async_method_mut("flush", |lua, mut me, ()| async move {
@@ -148,32 +139,32 @@ impl UserData for Child {
 			};
 			match stdin.flush().await {
 				Ok(()) => true.into_lua_multi(&lua),
-				Err(e) => (false, Error::Io(e)).into_lua_multi(&lua),
+				Err(e) => (false, Error::from(e)).into_lua_multi(&lua),
 			}
 		});
 
 		methods.add_async_method_mut("wait", |lua, mut me, ()| async move {
 			match me.wait().await {
 				Ok(status) => Status::new(status).into_lua_multi(&lua),
-				Err(e) => (Value::Nil, Error::Io(e)).into_lua_multi(&lua),
+				Err(e) => (Value::Nil, Error::from(e)).into_lua_multi(&lua),
 			}
 		});
 		methods.add_async_method_once("wait_with_output", |lua, me, ()| async move {
 			match me.wait_with_output().await {
 				Ok(output) => Output::new(output).into_lua_multi(&lua),
-				Err(e) => (Value::Nil, Error::Io(e)).into_lua_multi(&lua),
+				Err(e) => (Value::Nil, Error::from(e)).into_lua_multi(&lua),
 			}
 		});
 		methods.add_async_method_mut("try_wait", |lua, mut me, ()| async move {
 			match me.inner.try_wait() {
 				Ok(Some(status)) => Status::new(status).into_lua_multi(&lua),
 				Ok(None) => Value::Nil.into_lua_multi(&lua),
-				Err(e) => (Value::Nil, Error::Io(e)).into_lua_multi(&lua),
+				Err(e) => (Value::Nil, Error::from(e)).into_lua_multi(&lua),
 			}
 		});
 		methods.add_method_mut("start_kill", |lua, me, ()| match me.inner.start_kill() {
 			Ok(_) => true.into_lua_multi(lua),
-			Err(e) => (false, Error::Io(e)).into_lua_multi(lua),
+			Err(e) => (false, Error::from(e)).into_lua_multi(lua),
 		});
 
 		methods.add_method_mut("take_stdin", |lua, me, ()| match me.stdin.take() {

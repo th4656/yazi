@@ -3,8 +3,8 @@ use std::ops::Deref;
 use hashbrown::HashSet;
 use indexmap::{IndexSet, set::MutableValues};
 use yazi_dds::Pubsub;
-use yazi_fs::{FilesOp, file::FileCov};
-use yazi_macro::err;
+use yazi_fs::file::{File, FileCov};
+use yazi_macro::log_if_err;
 use yazi_shared::url::{Url, UrlBuf, UrlCov, UrlLike};
 
 #[derive(Debug, Default)]
@@ -26,6 +26,8 @@ impl Yanked {
 	pub fn new(cut: bool, files: IndexSet<FileCov>) -> Self {
 		Self { cut, files, ..Default::default() }
 	}
+
+	pub(crate) fn files(&self) -> impl Iterator<Item = &File> { self.files.iter().map(|f| &f.0) }
 
 	pub fn urls(&self) -> impl Iterator<Item = &UrlBuf> { self.files.iter().map(|f| &f.url) }
 
@@ -66,20 +68,12 @@ impl Yanked {
 		})
 	}
 
-	pub fn apply_op(&mut self, op: &FilesOp) {
-		let (removal, addition) = op.diff_recoverable(self.urls());
-		if !removal.is_empty() {
-			let old = self.files.len();
-			self.files.retain(|f| !removal.iter().any(|u| f.url.covariant(u)));
-			self.revision += (old != self.files.len()) as u64;
-		}
-		if !addition.is_empty() {
-			let old = self.files.len();
-			self.files.extend(addition.into_iter().map(FileCov));
-			self.revision += (old != self.files.len()) as u64;
-		}
-		for f in op.files() {
-			self.files.get_full_mut2(&UrlCov::new(&f.url)).map(|(_, v)| *v = f.into());
+	pub(crate) fn upsert(&mut self, file: &File) {
+		if let Some((_, value)) = self.files.get_full_mut2(&UrlCov::new(&file.url)) {
+			*value = file.into();
+		} else {
+			self.files.insert(file.into());
+			self.revision += 1;
 		}
 	}
 
@@ -89,7 +83,7 @@ impl Yanked {
 		}
 
 		self.version = self.revision;
-		err!(Pubsub::pub_after_yank(self.cut, &self.files));
+		log_if_err!(Pubsub::pub_after_yank(self.cut, &self.files));
 		true
 	}
 }

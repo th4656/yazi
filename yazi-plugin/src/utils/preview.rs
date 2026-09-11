@@ -1,9 +1,9 @@
 use mlua::{ExternalError, Function, IntoLuaMulti, Lua, Table, Value};
-use yazi_binding::{Error, elements::Area};
+use yazi_binding::{elements::Area, runtime};
 use yazi_core::{Highlighter, MgrProxy, tab::PreviewLock};
-use yazi_fs::FsUrl;
+use yazi_fs::file::FileRef;
 use yazi_runner::previewer::PeekError;
-use yazi_shared::url::AsUrl;
+use yazi_shim::fs::Error;
 use yazi_widgets::Renderable;
 
 use super::Utils;
@@ -15,9 +15,9 @@ impl Utils {
 	pub(super) fn preview_code(lua: &Lua) -> mlua::Result<Function> {
 		lua.create_async_function(|lua, t: Table| async move {
 			let area: Area = t.raw_get("area")?;
-			let mut lock = PreviewLock::try_from(t)?;
+			let path = t.raw_get::<FileRef>("file")?.borrow(|f| Ok(f.content_path().into_owned()))?;
 
-			let path = lock.url.as_url().unified_path();
+			let mut lock = PreviewLock::try_from(t)?;
 			let inner = match Highlighter::oneshot(path, lock.skip, area.size()).await {
 				Ok(text) => text,
 				Err(e @ PeekError::Exceeded(max)) => return (e, max).into_lua_multi(&lua),
@@ -28,13 +28,13 @@ impl Utils {
 
 			lock.data = vec![Renderable::Text(inner.into()).with_area(area)];
 
-			MgrProxy::update_peeked(lock);
+			MgrProxy::update_peeked(lock, runtime!(lua)?.scope());
 			().into_lua_multi(&lua)
 		})
 	}
 
 	pub(super) fn preview_widget(lua: &Lua) -> mlua::Result<Function> {
-		lua.create_async_function(|_, (t, value): (Table, Value)| async move {
+		lua.create_async_function(|lua, (t, value): (Table, Value)| async move {
 			let mut lock = PreviewLock::try_from(t)?;
 			lock.data = match value {
 				Value::Nil => vec![],
@@ -55,7 +55,7 @@ impl Utils {
 				_ => Err("preview widget must be a renderable element or a table of them".into_lua_err())?,
 			};
 
-			MgrProxy::update_peeked(lock);
+			MgrProxy::update_peeked(lock, runtime!(lua)?.scope());
 			Ok(())
 		})
 	}

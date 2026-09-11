@@ -1,20 +1,20 @@
 use std::{sync::atomic::Ordering, time::{Duration, Instant}};
 
 use anyhow::Result;
-use tokio::{select, sync::mpsc, time::sleep};
+use tokio::{select, time::sleep};
 use yazi_actor::Ctx;
 use yazi_core::Core;
-use yazi_macro::act;
-use yazi_shared::{data::Data, event::{Event, NEED_RENDER}};
+use yazi_macro::{act, render, succ};
+use yazi_shared::{data::Data, event::{Event, EventRx, NEED_RENDER}};
 use yazi_tui::Raterm;
 
-use crate::{Dispatcher, Signals};
+use crate::Dispatcher;
 
 pub(crate) struct App {
 	pub(crate) core: Core,
 	pub(crate) term: Option<Raterm>,
 
-	need_render:            u8,
+	pub(super) need_render: u8,
 	pub(crate) last_render: Instant,
 	next_render:            Option<Duration>,
 }
@@ -33,7 +33,6 @@ impl App {
 
 	pub(crate) async fn serve() -> Result<()> {
 		let term = Raterm::start()?;
-		Signals::start()?;
 
 		let mut app = Self::make(term)?;
 		app.bootstrap()?;
@@ -43,7 +42,7 @@ impl App {
 			if let Some(t) = app.next_render.take() {
 				select! {
 					_ = sleep(t) => {
-						app.render(app.need_render == 2)?;
+						app.render()?;
 					}
 					r = app.drain(&mut rx) => if !r? {
 						break;
@@ -59,11 +58,11 @@ impl App {
 	fn bootstrap(&mut self) -> Result<Data> {
 		let cx = &mut Ctx::active(&mut self.core, &mut self.term);
 		act!(app:bootstrap, cx)?;
-
-		self.render(false)
+		act!(app:reflow, cx, crate::Root::reflow as fn(_) -> _)?;
+		succ!(render!())
 	}
 
-	async fn drain(&mut self, rx: &mut mpsc::UnboundedReceiver<Event>) -> Result<bool> {
+	async fn drain(&mut self, rx: &mut EventRx) -> Result<bool> {
 		let Some(event) = rx.recv().await else {
 			return Ok(false);
 		};
@@ -86,7 +85,7 @@ impl App {
 
 		self.next_render = Duration::from_millis(10).checked_sub(self.last_render.elapsed());
 		if self.next_render.is_none() {
-			self.render(self.need_render == 2)?;
+			self.render()?;
 		}
 
 		Ok(())

@@ -2,10 +2,10 @@ use std::{any::TypeId, ffi::OsStr, io, process::Stdio};
 
 use mlua::{AnyUserData, ExternalError, IntoLua, IntoLuaMulti, Lua, LuaString, MetaMethod, Table, UserData, UserDataMethods, Value};
 use tokio::process::{ChildStderr, ChildStdin, ChildStdout};
-use yazi_shim::wtf8::FromWtf8;
+use yazi_shim::{fs::Error, wtf8::FromWtf8};
 
 use super::{Child, output::Output};
-use crate::{Error, process::Status};
+use crate::process::Status;
 
 pub struct Command {
 	inner:  tokio::process::Command,
@@ -17,7 +17,7 @@ const PIPED: u8 = 1;
 const INHERIT: u8 = 2;
 
 impl Command {
-	pub fn install(lua: &Lua) -> mlua::Result<()> {
+	pub(crate) fn install(lua: &Lua) -> mlua::Result<()> {
 		let new = lua.create_function(|_, (_, program): (Table, String)| {
 			let mut inner = tokio::process::Command::new(program);
 			inner.kill_on_drop(true).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
@@ -53,18 +53,19 @@ impl Command {
 
 	#[cfg(windows)]
 	fn spawn(&mut self) -> io::Result<Child> {
-		use std::os::windows::io::RawHandle;
+		use std::{mem, os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle, RawHandle}};
 
-		use windows_sys::Win32::{Foundation::CloseHandle, System::JobObjects::{AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOB_OBJECT_LIMIT_PROCESS_MEMORY, JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectExtendedLimitInformation, SetInformationJobObject}};
+		use windows_sys::Win32::System::JobObjects::{AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOB_OBJECT_LIMIT_PROCESS_MEMORY, JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectExtendedLimitInformation, SetInformationJobObject};
 
-		fn create_job(handle: RawHandle, memory: Option<usize>) -> io::Result<RawHandle> {
+		fn create_job(handle: RawHandle, memory: Option<usize>) -> io::Result<OwnedHandle> {
 			unsafe {
 				let job = CreateJobObjectW(std::ptr::null_mut(), std::ptr::null());
 				if job.is_null() {
 					return Err(io::Error::last_os_error());
 				}
 
-				let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+				let job = OwnedHandle::from_raw_handle(job);
+				let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = mem::zeroed();
 				info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
 				if let Some(m) = memory {
 					info.BasicLimitInformation.LimitFlags |= JOB_OBJECT_LIMIT_PROCESS_MEMORY;
@@ -72,18 +73,16 @@ impl Command {
 				}
 
 				if SetInformationJobObject(
-					job,
+					job.as_raw_handle(),
 					JobObjectExtendedLimitInformation,
 					&mut info as *mut _ as *mut _,
-					std::mem::size_of_val(&info) as u32,
+					mem::size_of_val(&info) as u32,
 				) == 0
 				{
-					CloseHandle(job);
 					return Err(io::Error::last_os_error());
 				}
 
-				if AssignProcessToJobObject(job, handle) == 0 {
-					CloseHandle(job);
+				if AssignProcessToJobObject(job.as_raw_handle(), handle) == 0 {
 					return Err(io::Error::last_os_error());
 				}
 
@@ -188,18 +187,18 @@ impl UserData for Command {
 		});
 		methods.add_method_mut("spawn", |lua, me, ()| match me.spawn() {
 			Ok(child) => child.into_lua_multi(lua),
-			Err(e) => (Value::Nil, Error::Io(e)).into_lua_multi(lua),
+			Err(e) => (Value::Nil, Error::from(e)).into_lua_multi(lua),
 		});
 		methods.add_async_method_mut("output", |lua, mut me, ()| async move {
 			match me.output().await {
 				Ok(output) => Output::new(output).into_lua_multi(&lua),
-				Err(e) => (Value::Nil, Error::Io(e)).into_lua_multi(&lua),
+				Err(e) => (Value::Nil, Error::from(e)).into_lua_multi(&lua),
 			}
 		});
 		methods.add_async_method_mut("status", |lua, mut me, ()| async move {
 			match me.status().await {
 				Ok(status) => Status::new(status).into_lua_multi(&lua),
-				Err(e) => (Value::Nil, Error::Io(e)).into_lua_multi(&lua),
+				Err(e) => (Value::Nil, Error::from(e)).into_lua_multi(&lua),
 			}
 		});
 	}

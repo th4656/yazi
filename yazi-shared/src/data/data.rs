@@ -115,11 +115,15 @@ impl<'a> TryFrom<&'a Data> for &'a str {
 	}
 }
 
-impl TryFrom<Data> for SStr {
+impl<'a> TryFrom<Data> for Cow<'a, str> {
 	type Error = anyhow::Error;
 
 	fn try_from(value: Data) -> Result<Self, Self::Error> {
-		value.into_sstr().ok_or_else(|| anyhow!("not a string"))
+		match value {
+			Data::String(Cow::Borrowed(s)) => Ok(Cow::Borrowed(s)),
+			Data::String(Cow::Owned(s)) => Ok(Cow::Owned(s)),
+			_ => Err(anyhow!("not a string")),
+		}
 	}
 }
 
@@ -153,8 +157,11 @@ impl TryFrom<Data> for String {
 impl TryFrom<&Data> for HashMap<DataKey, Data> {
 	type Error = anyhow::Error;
 
-	fn try_from(_: &Data) -> Result<Self, Self::Error> {
-		bail!("cannot take ownership of dict from &Data");
+	fn try_from(value: &Data) -> Result<Self, Self::Error> {
+		match value {
+			Data::Dict(d) => Ok(d.clone()),
+			_ => bail!("not a dict"),
+		}
 	}
 }
 
@@ -249,7 +256,7 @@ impl PartialEq<bool> for Data {
 }
 
 impl Data {
-	pub fn as_str(&self) -> Option<&str> {
+	pub(crate) fn as_str(&self) -> Option<&str> {
 		match self {
 			Self::String(s) => Some(s),
 			_ => None,
@@ -259,13 +266,6 @@ impl Data {
 	pub fn as_any<T: 'static>(&self) -> Option<&T> {
 		match self {
 			Self::Any(a) => a.downcast_ref::<T>(),
-			_ => None,
-		}
-	}
-
-	pub fn into_sstr(self) -> Option<SStr> {
-		match self {
-			Self::String(s) => Some(s),
 			_ => None,
 		}
 	}

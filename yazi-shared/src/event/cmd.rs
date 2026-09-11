@@ -6,7 +6,7 @@ use mlua::{UserData, UserDataFields};
 use serde_with::DeserializeFromStr;
 use yazi_shim::{SStr, mlua::UserDataFieldsExt};
 
-use crate::data::{Data, DataKey, Sendable};
+use crate::{data::{Data, DataKey}, sendable::Sendable};
 
 #[derive(Clone, Debug, Default, DeserializeFromStr)]
 pub struct Cmd {
@@ -31,7 +31,7 @@ impl FromStr for Cmd {
 }
 
 impl Cmd {
-	pub fn null() -> Self { Self { name: "null".into(), ..Default::default() } }
+	pub(crate) fn null() -> Self { Self { name: "null".into(), ..Default::default() } }
 
 	pub fn parse_args<I>(words: I, last: Option<String>) -> Result<HashMap<DataKey, Data>>
 	where

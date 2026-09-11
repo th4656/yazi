@@ -1,7 +1,7 @@
 use std::{borrow::Cow, ffi::OsStr, fmt::Display};
 
 use anyhow::Result;
-use yazi_shim::wtf8::FromWtf8;
+use yazi_shim::{OptionExt, wtf8::FromWtf8};
 
 use crate::{BytesExt, strand::{AsStrand, StrandBuf, StrandError, StrandKind}};
 
@@ -79,6 +79,10 @@ impl PartialEq<&[u8]> for Strand<'_> {
 	}
 }
 
+impl<'p> OptionExt<StrandBuf> for Option<Strand<'p>> {
+	fn owned(self) -> Option<StrandBuf> { self.map(Strand::to_owned) }
+}
+
 impl<'a> Strand<'a> {
 	pub fn as_os(self) -> Result<&'a OsStr, StrandError> {
 		match self {
@@ -89,16 +93,21 @@ impl<'a> Strand<'a> {
 	}
 
 	#[inline]
-	pub fn as_os_path(self) -> Result<&'a std::path::Path, StrandError> {
+	pub(crate) fn as_os_path(self) -> Result<&'a std::path::Path, StrandError> {
 		self.as_os().map(std::path::Path::new)
 	}
 
 	#[inline]
-	pub fn as_unix_path(self) -> &'a typed_path::UnixPath {
+	pub fn to_os_path(self) -> Result<std::path::PathBuf, StrandError> {
+		self.as_os().map(std::path::PathBuf::from)
+	}
+
+	#[inline]
+	pub(crate) fn as_unix_path(self) -> &'a typed_path::UnixPath {
 		typed_path::UnixPath::new(self.encoded_bytes())
 	}
 
-	pub fn as_utf8(self) -> Result<&'a str, StrandError> {
+	pub(crate) fn as_utf8(self) -> Result<&'a str, StrandError> {
 		match self {
 			Self::Os(s) => s.to_str().ok_or(StrandError::AsUtf8),
 			Self::Utf8(s) => Ok(s),
@@ -127,7 +136,7 @@ impl<'a> Strand<'a> {
 		unsafe { StrandBuf::from_encoded_bytes(self.kind(), out) }.into()
 	}
 
-	pub fn contains(self, x: impl AsStrand) -> bool {
+	pub(crate) fn contains(self, x: impl AsStrand) -> bool {
 		memchr::memmem::find(self.encoded_bytes(), x.as_strand().encoded_bytes()).is_some()
 	}
 
@@ -156,7 +165,7 @@ impl<'a> Strand<'a> {
 		}
 	}
 
-	pub fn ends_with(self, needle: impl AsStrand) -> bool {
+	pub(crate) fn ends_with(self, needle: impl AsStrand) -> bool {
 		self.encoded_bytes().ends_with(needle.as_strand().encoded_bytes())
 	}
 
@@ -164,18 +173,9 @@ impl<'a> Strand<'a> {
 		self.encoded_bytes().eq_ignore_ascii_case(other.as_strand().encoded_bytes())
 	}
 
-	#[inline]
-	pub unsafe fn from_encoded_bytes(kind: impl Into<StrandKind>, bytes: &'a [u8]) -> Self {
-		match kind.into() {
-			StrandKind::Utf8 => Self::Utf8(unsafe { str::from_utf8_unchecked(bytes) }),
-			StrandKind::Os => Self::Os(unsafe { OsStr::from_encoded_bytes_unchecked(bytes) }),
-			StrandKind::Bytes => Self::Bytes(bytes),
-		}
-	}
+	pub(crate) fn is_empty(self) -> bool { self.encoded_bytes().is_empty() }
 
-	pub fn is_empty(self) -> bool { self.encoded_bytes().is_empty() }
-
-	pub fn kind(self) -> StrandKind {
+	pub(crate) fn kind(self) -> StrandKind {
 		match self {
 			Self::Utf8(_) => StrandKind::Utf8,
 			Self::Os(_) => StrandKind::Os,
@@ -189,7 +189,7 @@ impl<'a> Strand<'a> {
 		self.encoded_bytes().starts_with(needle.as_strand().encoded_bytes())
 	}
 
-	pub fn starts_with_ignore_ascii_case(self, needle: impl AsStrand) -> bool {
+	pub(crate) fn starts_with_ignore_ascii_case(self, needle: impl AsStrand) -> bool {
 		let haystack = self.encoded_bytes();
 		let needle = needle.as_strand().encoded_bytes();
 		haystack.len() >= needle.len() && haystack[..needle.len()].eq_ignore_ascii_case(needle)
@@ -209,7 +209,7 @@ impl<'a> Strand<'a> {
 
 	pub fn to_string_lossy(self) -> Cow<'a, str> { String::from_utf8_lossy(self.encoded_bytes()) }
 
-	pub fn with<K, S>(kind: K, strand: &'a S) -> Result<Self>
+	pub(crate) fn with<K, S>(kind: K, strand: &'a S) -> Result<Self>
 	where
 		K: Into<StrandKind>,
 		S: ?Sized + AsStrand,

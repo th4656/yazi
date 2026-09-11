@@ -2,35 +2,35 @@ yazi_macro::mod_pub!(cache dds env package shared);
 
 yazi_macro::mod_flat!(args);
 
-use std::process::ExitCode;
-
 use clap::Parser;
 use yazi_macro::{errln, outln};
 use yazi_shared::LOCAL_SET;
 
 #[tokio::main]
-async fn main() -> ExitCode {
+async fn main() -> anyhow::Result<()> {
+	yazi_shim::init()?;
 	yazi_shared::init();
 	yazi_fs::init();
 
 	match LOCAL_SET.run_until(run()).await {
-		Ok(()) => ExitCode::SUCCESS,
+		Ok(()) => Ok(()),
 		Err(e) => {
 			for cause in e.chain() {
 				if let Some(ioerr) = cause.downcast_ref::<std::io::Error>()
 					&& ioerr.kind() == std::io::ErrorKind::BrokenPipe
 				{
-					return ExitCode::from(0);
+					return Ok(());
 				}
 			}
+
 			errln!("{e:#}").ok();
-			ExitCode::FAILURE
+			Err(e)
 		}
 	}
 }
 
 async fn run() -> anyhow::Result<()> {
-	if std::env::args_os().nth(1).is_some_and(|s| s == "-V" || s == "--version") {
+	if yazi_version::has_dash_v() {
 		outln!("Ya\n{}", yazi_version::version_full())?;
 		return Ok(());
 	}
@@ -108,7 +108,7 @@ async fn run() -> anyhow::Result<()> {
 
 		Command::Cache(cmd) => {
 			yazi_tty::init();
-			yazi_config::init()?;
+			yazi_config::setup()?;
 
 			match cmd {
 				CommandCache::Clear => {
@@ -119,10 +119,9 @@ async fn run() -> anyhow::Result<()> {
 
 		Command::Env => {
 			yazi_tty::init();
-			yazi_term::init()?;
-			yazi_config::init()?;
-			yazi_adapter::init()?;
-			outln!("{}", env::Env::print()?)?;
+			yazi_term::setup()?;
+			yazi_config::setup()?;
+			outln!("{}", env::Env::print().await?)?;
 		}
 	}
 

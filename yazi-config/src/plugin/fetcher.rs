@@ -12,15 +12,13 @@ use crate::{Mixable, Pattern, Priority, Selectable, Selector, YAZI, plugin::{Fet
 #[derive(Debug, Deserialize)]
 pub struct Fetcher {
 	#[serde(skip, default = "fetcher_id")]
-	pub id:       Id,
-	#[serde(skip)]
-	pub idx:      u8,
+	pub(crate) id:    Id,
 	#[serde(flatten)]
-	pub selector: Selector,
-	pub run:      Cmd,
+	selector:         Selector,
+	run:              Cmd,
 	#[serde(default)]
-	pub prio:     Priority,
-	pub group:    String,
+	pub prio:         Priority,
+	pub(crate) group: String,
 }
 
 impl Deref for Fetcher {
@@ -40,13 +38,13 @@ impl Mixable for Fetcher {}
 // --- Matcher
 #[derive(Default)]
 pub struct FetcherMatcher<'a> {
-	pub fetchers: Arc<Vec<FetcherArc>>,
-	pub id:       Id,
-	pub file:     Option<Cow<'a, File>>,
-	pub mime:     Option<Cow<'a, str>>,
-	pub all:      bool,
-	pub offset:   usize,
-	pub seen:     HashSet<String>,
+	fetchers: Arc<Vec<FetcherArc>>,
+	id:       Id,
+	file:     Option<Cow<'a, File>>,
+	mime:     Option<Cow<'a, str>>,
+	all:      bool,
+	offset:   usize,
+	seen:     HashSet<String>,
 }
 
 impl From<&Fetchers> for FetcherMatcher<'_> {
@@ -55,8 +53,21 @@ impl From<&Fetchers> for FetcherMatcher<'_> {
 	}
 }
 
-impl FetcherMatcher<'_> {
-	pub fn matches(&self, fetcher: &Fetcher) -> bool {
+impl<'a> FetcherMatcher<'a> {
+	pub fn new<F, M>(fetchers: &Arc<Vec<FetcherArc>>, file: F, mime: M) -> Self
+	where
+		F: Into<Cow<'a, File>>,
+		M: Into<Cow<'a, str>>,
+	{
+		Self {
+			fetchers: fetchers.clone(),
+			file: Some(file.into()),
+			mime: Some(mime.into()),
+			..Default::default()
+		}
+	}
+
+	pub(crate) fn matches(&self, fetcher: &Fetcher) -> bool {
 		if self.all {
 			true
 		} else if self.id != Id::ZERO {

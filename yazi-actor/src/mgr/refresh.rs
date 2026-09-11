@@ -1,10 +1,8 @@
 use anyhow::Result;
-use yazi_core::tab::Folder;
-use yazi_fs::{CWD, Entries, FilesOp, cha::Cha};
-use yazi_macro::{act, succ};
+use yazi_fs::CWD;
+use yazi_macro::{act, succ, tab};
 use yazi_parser::VoidForm;
-use yazi_shared::{data::Data, url::{UrlBuf, UrlLike}};
-use yazi_vfs::{VfsEntries, VfsFilesOp};
+use yazi_shared::{data::Data, url::UrlLike};
 use yazi_watcher::MgrProxy;
 
 use crate::{Actor, Ctx};
@@ -19,14 +17,17 @@ impl Actor for Refresh {
 	fn act(cx: &mut Ctx, _: Self::Form) -> Result<Data> {
 		CWD.set(cx.cwd(), Self::cwd_changed);
 
-		if let Some(p) = cx.parent() {
-			Self::trigger_dirs(&[cx.current(), p]);
-		} else {
-			Self::trigger_dirs(&[cx.current()]);
-		}
+		let tab = tab!(cx);
+		cx.core.mgr.watcher.refresher.refresh(
+			[Some(&mut tab.current), tab.parent.as_mut()]
+				.into_iter()
+				.flatten()
+				.filter(|f| f.url.is_absolute())
+				.map(|f| f.take_request()),
+		);
 
 		act!(mgr:peek, cx)?;
-		act!(mgr:watch, cx)?;
+		act!(mgr:watch, cx).ok();
 		act!(mgr:update_paged, cx)?;
 
 		cx.tasks.prework_sorted(&cx.current().entries);
@@ -36,30 +37,8 @@ impl Actor for Refresh {
 
 impl Refresh {
 	fn cwd_changed() {
-		if CWD.load().kind().is_virtual() {
+		if !CWD.load().auth().is_local() {
 			MgrProxy::watch();
-		}
-	}
-
-	// TODO: performance improvement
-	fn trigger_dirs(folders: &[&Folder]) {
-		async fn go(dir: UrlBuf, cha: Cha) {
-			let Some(cha) = Entries::assert_stale(&dir, cha).await else { return };
-
-			match Entries::from_dir_bulk(&dir).await {
-				Ok(files) => FilesOp::Full(dir, files, cha).emit(),
-				Err(e) => FilesOp::issue_error(&dir, e).await,
-			}
-		}
-
-		let futs: Vec<_> = folders
-			.iter()
-			.filter(|&f| f.url.is_absolute() && !f.url.is_search())
-			.map(|&f| go(f.url.clone(), f.cha))
-			.collect();
-
-		if !futs.is_empty() {
-			tokio::spawn(futures::future::join_all(futs));
 		}
 	}
 }

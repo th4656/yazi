@@ -64,20 +64,8 @@ impl UserData for File {
 	fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
 		yazi_binding::impl_file_methods!(methods);
 
-		methods.add_method("icon", |lua, me, ()| {
-			yazi_binding::deprecate!(
-				lua,
-				"{}: `File:icon()` is deprecated, use `th.icon:match(file)` instead"
-			);
-			// TODO: use a cache
-			Ok(yazi_config::THEME.icon.matches(me, me.is_hovered()))
-		});
 		methods.add_method("size", |_, me, ()| {
-			Ok(if me.is_dir() {
-				me.folder.entries.sizes.get(&me.entry_key()).copied()
-			} else {
-				Some(me.len)
-			})
+			Ok(if me.is_dir() { me.folder.entries.sizes.get(&me.key()).copied() } else { Some(me.len) })
 		});
 		methods.add_method("mime", |lua, me, ()| {
 			let core: CoreRef = lua.named_registry_value("cx")?;
@@ -126,7 +114,7 @@ impl UserData for File {
 				return Ok(None);
 			};
 
-			let Some(idx) = finder.matched_idx(&me.folder, me.entry_key()) else {
+			let Some(idx) = finder.matched_idx(&me.folder, me.key()) else {
 				return Ok(None);
 			};
 

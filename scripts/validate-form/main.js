@@ -13,7 +13,8 @@ function pullRequestBody(content) {
 }
 
 function bugReportBody(creator, content, hash) {
-	if (RE_DEPENDENCIES.test(content) && RE_CHECKLIST.test(content) && new RegExp(` \\(${hash}[a-f0-9]? `).test(content)) {
+	const t = app => new RegExp(String.raw`${app}\s+Version\s*:\s+\d+\.\d+\.\d+\s+\(${hash}[a-f0-9]? `).test(content)
+	if (RE_DEPENDENCIES.test(content) && RE_CHECKLIST.test(content) && t("Yazi") && t("Ya")) {
 		return null
 	}
 
@@ -221,7 +222,10 @@ If the problem persists, please file a new issue and complete the issue template
 				...context.repo,
 				issue_number: id,
 				body: `Unsupported issue template.
-Either the [Bug Report](https://github.com/sxyazi/yazi/issues/new?template=bug.yml) or [Feature Request](https://github.com/sxyazi/yazi/issues/new?template=feature.yml) template should be used.`,
+Either the [Bug Report](https://github.com/sxyazi/yazi/issues/new?template=bug.yml) or [Feature Request](https://github.com/sxyazi/yazi/issues/new?template=feature.yml) template should be used.
+
+<!-- AI bots are not allowed to open issues in this repository. All issues must be made by humans and comply with the AI policy. -->
+`,
 			})
 		} catch (e) {
 			core.error(`Error closing unsupported issue: ${e.message}`)

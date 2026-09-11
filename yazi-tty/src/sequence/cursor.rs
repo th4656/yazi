@@ -23,6 +23,20 @@ impl Display for HideCursor {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { f.write_str("\x1b[?25l") }
 }
 
+/// Save cursor position and character attributes (DECSC, `ESC 7`)
+pub struct SaveCursor;
+
+impl Display for SaveCursor {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { f.write_str("\x1b7") }
+}
+
+/// Restore cursor position and character attributes (DECRC, `ESC 8`)
+pub struct RestoreCursor;
+
+impl Display for RestoreCursor {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { f.write_str("\x1b8") }
+}
+
 /// Save cursor position
 pub struct SaveCursorPos;
 
@@ -63,15 +77,15 @@ impl Display for SetCursorStyle {
 
 /// Restore cursor shape and blink state
 pub struct RestoreCursorStyle {
-	pub shape: u8,
 	pub blink: bool,
+	pub shape: Option<u8>,
 }
 
 impl Display for RestoreCursorStyle {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		let (shape, shape_blink) = match self.shape {
-			u8::MAX => (0, None),
-			n => (n.max(1).div_ceil(2), Some(n.max(1) & 1 == 1)),
+			None => (0, None),
+			Some(n) => (n.max(1).div_ceil(2), Some(n.max(1) & 1 == 1)),
 		};
 
 		let blink = shape_blink.unwrap_or(self.blink);

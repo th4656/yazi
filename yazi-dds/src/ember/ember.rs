@@ -1,8 +1,8 @@
 use anyhow::{Result, bail};
-use mlua::{ExternalResult, IntoLua, Lua, Value};
+use mlua::{IntoLua, Lua, Value};
 use yazi_shared::id::Id;
 
-use super::{EmberBulkRename, EmberBye, EmberCd, EmberCustom, EmberDelete, EmberDownload, EmberDuplicate, EmberHey, EmberHi, EmberHover, EmberInput, EmberLoad, EmberMount, EmberMove, EmberRename, EmberTab, EmberTrash, EmberYank};
+use super::{EmberBulkRename, EmberBye, EmberCd, EmberCustom, EmberDelete, EmberDownload, EmberDuplicate, EmberHey, EmberHi, EmberHover, EmberInput, EmberLoad, EmberMount, EmberMove, EmberRename, EmberTab, EmberTheme, EmberTrash, EmberYank};
 use crate::Payload;
 
 #[derive(Clone, Debug)]
@@ -24,11 +24,12 @@ pub enum Ember<'a> {
 	Download(EmberDownload<'a>),
 	Input(EmberInput<'a>),
 	Mount(EmberMount),
+	Theme(EmberTheme),
 	Custom(EmberCustom),
 }
 
 impl Ember<'static> {
-	pub fn from_str(kind: &str, body: &str) -> Result<Self> {
+	pub(crate) fn from_str(kind: &str, body: &str) -> Result<Self> {
 		Ok(match kind {
 			"hi" => Self::Hi(serde_json::from_str(body)?),
 			"hey" => Self::Hey(serde_json::from_str(body)?),
@@ -47,12 +48,13 @@ impl Ember<'static> {
 			"download" => Self::Download(serde_json::from_str(body)?),
 			"input" => Self::Input(serde_json::from_str(body)?),
 			"mount" => Self::Mount(serde_json::from_str(body)?),
+			"theme" => Self::Theme(serde_json::from_str(body)?),
 			_ => EmberCustom::from_str(kind, body)?,
 		})
 	}
 
 	pub fn from_lua(lua: &Lua, kind: &str, value: Value) -> mlua::Result<Self> {
-		Self::validate(kind).into_lua_err()?;
+		Self::validate(kind)?;
 		EmberCustom::from_lua(lua, kind, value)
 	}
 
@@ -76,6 +78,7 @@ impl Ember<'static> {
 				| "download"
 				| "input"
 				| "mount"
+				| "theme"
 		) || kind.starts_with("key-")
 			|| kind.starts_with("ind-")
 			|| kind.starts_with("emit-")
@@ -116,11 +119,12 @@ impl<'a> Ember<'a> {
 			Self::Download(_) => "download",
 			Self::Input(_) => "input",
 			Self::Mount(_) => "mount",
+			Self::Theme(_) => "theme",
 			Self::Custom(b) => b.kind.as_str(),
 		}
 	}
 
-	pub fn with_receiver(self, receiver: Id) -> Payload<'a> {
+	pub(crate) fn with_receiver(self, receiver: Id) -> Payload<'a> {
 		Payload::new(self).with_receiver(receiver)
 	}
 }
@@ -145,6 +149,7 @@ impl<'a> IntoLua for Ember<'a> {
 			Self::Download(b) => b.into_lua(lua),
 			Self::Input(b) => b.into_lua(lua),
 			Self::Mount(b) => b.into_lua(lua),
+			Self::Theme(b) => b.into_lua(lua),
 			Self::Custom(b) => b.into_lua(lua),
 		}
 	}

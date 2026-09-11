@@ -1,10 +1,10 @@
 use std::io;
 
-use tokio::{io::{AsyncRead, AsyncSeek, AsyncWrite, AsyncWriteExt}, sync::mpsc};
+use tokio::io::{AsyncRead, AsyncSeek, AsyncWrite, AsyncWriteExt};
 use yazi_macro::ok_or_not_found;
 use yazi_shared::{path::{DynPath, PathBufDyn}, strand::{AsStrand, StrandCow}, url::{AsUrl, Url, UrlBuf}};
 
-use crate::{cha::{Cha, ChaType}, engine::{Attrs, Capabilities}};
+use crate::{cha::{Cha, ChaType}, engine::{Attrs, Capabilities, Transmit}, file::{File, FileExtra}};
 
 pub trait Engine: Sized {
 	type File: AsyncRead + AsyncSeek + AsyncWrite + Unpin;
@@ -21,14 +21,11 @@ pub trait Engine: Sized {
 
 	fn casefold(&self) -> impl Future<Output = io::Result<UrlBuf>>;
 
-	fn copy<P>(&self, to: P, attrs: Attrs) -> impl Future<Output = io::Result<u64>>
-	where
-		P: DynPath;
+	fn copy_to(&self, to: Url<'_>, attrs: Attrs) -> impl Future<Output = io::Result<Transmit>>;
 
-	fn copy_progressive<P, A>(&self, to: P, attrs: A) -> io::Result<mpsc::Receiver<io::Result<u64>>>
-	where
-		P: DynPath,
-		A: Into<Attrs>;
+	fn copy_from(&self, _from: Url<'_>, _attrs: Attrs) -> impl Future<Output = io::Result<Transmit>> {
+		async { Ok(Transmit::unsupported()) }
+	}
 
 	fn create(&self) -> impl Future<Output = io::Result<Self::File>> {
 		async move { self.demand().write(true).create(true).truncate(true).open(self.url()).await }
@@ -36,7 +33,9 @@ pub trait Engine: Sized {
 
 	fn create_dir(&self) -> impl Future<Output = io::Result<()>>;
 
-	fn create_dir_all(&self) -> impl Future<Output = io::Result<()>> {
+	fn create_dir_all(&self) -> impl Future<Output = io::Result<()>> { self.create_dir_all_default() }
+
+	fn create_dir_all_default(&self) -> impl Future<Output = io::Result<()>> {
 		async move {
 			let mut url = self.url();
 			if url.loc().is_empty() {
@@ -78,6 +77,24 @@ pub trait Engine: Sized {
 
 	fn demand(&self) -> Self::Demand { Self::Demand::default() }
 
+	fn file(&self) -> impl Future<Output = io::Result<File>> {
+		async move {
+			let cha = self.symlink_metadata().await?;
+
+			let (mut followed, mut link_to) = (None, None);
+			if cha.is_link() {
+				followed = self.metadata().await.ok();
+				link_to = self.read_link().await.ok();
+			}
+
+			Ok(File {
+				url:   self.url().to_owned(),
+				cha:   cha.follow(followed),
+				extra: FileExtra::new(link_to, None),
+			})
+		}
+	}
+
 	fn hard_link<P>(&self, to: P) -> impl Future<Output = io::Result<()>>
 	where
 		P: DynPath;
@@ -94,20 +111,31 @@ pub trait Engine: Sized {
 
 	fn read_link(&self) -> impl Future<Output = io::Result<PathBufDyn>>;
 
+	fn revalidate(&self, file: File) -> impl Future<Output = io::Result<Option<File>>> {
+		async move {
+			let new = self.file().await?;
+			if new.cha.hits(file.cha) { Ok(None) } else { Ok(Some(new)) }
+		}
+	}
+
 	fn remove_dir(&self) -> impl Future<Output = io::Result<()>>;
 
-	fn remove_dir_all(&self) -> impl Future<Output = io::Result<()>> {
+	fn remove_dir_all(&self) -> impl Future<Output = io::Result<()>> { self.remove_dir_all_default() }
+
+	fn remove_dir_all_default(&self) -> impl Future<Output = io::Result<()>> {
 		async fn remove_dir_all_impl<P>(url: Url<'_>) -> io::Result<()>
 		where
 			P: Engine,
 		{
 			let mut it = ok_or_not_found!(P::new(url).await?.read_dir().await, return Ok(()));
-			while let Some(child) = it.next().await? {
-				let ft = ok_or_not_found!(child.file_type().await, continue);
-				let result = if ft.is_dir() {
-					Box::pin(remove_dir_all_impl::<P>(child.url().as_url())).await
+			while let Some(dent) = it.next().await? {
+				let cha = ok_or_not_found!(dent.metadata().await, continue);
+				let result = if cha.is_dir() && !cha.is_indirect() {
+					Box::pin(remove_dir_all_impl::<P>(dent.url().as_url())).await
+				} else if cha.is_dir() {
+					P::new(dent.url().as_url()).await?.remove_dir().await
 				} else {
-					P::new(child.url().as_url()).await?.remove_file().await
+					P::new(dent.url().as_url()).await?.remove_file().await
 				};
 
 				() = ok_or_not_found!(result);
@@ -118,10 +146,12 @@ pub trait Engine: Sized {
 
 		async move {
 			let cha = ok_or_not_found!(self.symlink_metadata().await, return Ok(()));
-			if cha.is_link() {
-				self.remove_file().await
-			} else {
+			if !cha.is_indirect() {
 				remove_dir_all_impl::<Self>(self.url()).await
+			} else if cha.is_dir() {
+				self.remove_dir().await
+			} else {
+				self.remove_file().await
 			}
 		}
 	}
@@ -134,18 +164,23 @@ pub trait Engine: Sized {
 			let mut result = Ok(());
 
 			while let Some((dir, visited)) = stack.pop() {
-				let Ok(engine) = Self::new(dir.as_url()).await else {
-					continue;
-				};
+				let Ok(engine) = Self::new(dir.as_url()).await else { continue };
 
 				if visited {
 					result = engine.remove_dir().await;
-				} else if let Ok(mut it) = engine.read_dir().await {
-					stack.push((dir, true));
-					while let Ok(Some(ent)) = it.next().await {
-						if ent.file_type().await.is_ok_and(|t| t.is_dir()) {
-							stack.push((ent.url(), false));
-						}
+					continue;
+				}
+
+				if !engine.symlink_metadata().await.is_ok_and(|c| c.is_dir() && !c.is_indirect()) {
+					continue;
+				}
+
+				let Ok(mut it) = engine.read_dir().await else { continue };
+				stack.push((dir, true));
+
+				while let Ok(Some(dent)) = it.next().await {
+					if dent.metadata().await.is_ok_and(|c| c.is_dir() && !c.is_indirect()) {
+						stack.push((dent.url(), false));
 					}
 				}
 			}
@@ -204,6 +239,9 @@ pub trait DirReader {
 
 // --- FileHolder
 pub trait FileHolder {
+	#[must_use]
+	fn file(&self) -> impl Future<Output = io::Result<File>>;
+
 	#[must_use]
 	fn file_type(&self) -> impl Future<Output = io::Result<ChaType>>;
 

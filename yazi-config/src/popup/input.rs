@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use yazi_binding::position::{Offset, Origin, Position};
 use yazi_codegen::{DeserializeOver, DeserializeOver2};
-use yazi_shared::{spec::EncodeSpec, url::Url};
+use yazi_shared::{spec::Encode as EncodeSpec, url::Url};
 use yazi_widgets::input::InputOpt;
 
 #[derive(Deserialize, DeserializeOver, DeserializeOver2)]
@@ -9,39 +9,34 @@ pub struct Input {
 	pub cursor_blink: bool,
 
 	// cd
-	pub cd_title:  String,
-	pub cd_origin: Origin,
-	pub cd_offset: Offset,
+	cd_title:  String,
+	cd_origin: Origin,
+	cd_offset: Offset,
 
 	// create
-	pub create_title:  [String; 2],
-	pub create_origin: Origin,
-	pub create_offset: Offset,
+	create_title:  [String; 2],
+	create_origin: Origin,
+	create_offset: Offset,
 
 	// rename
-	pub rename_title:  String,
-	pub rename_origin: Origin,
-	pub rename_offset: Offset,
+	rename_title:  String,
+	rename_origin: Origin,
+	rename_offset: Offset,
 
 	// filter
-	pub filter_title:  String,
-	pub filter_origin: Origin,
-	pub filter_offset: Offset,
+	filter_title:  String,
+	filter_origin: Origin,
+	filter_offset: Offset,
 
 	// find
-	pub find_title:  [String; 2],
-	pub find_origin: Origin,
-	pub find_offset: Offset,
-
-	// search
-	pub search_title:  String,
-	pub search_origin: Origin,
-	pub search_offset: Offset,
+	find_title:  [String; 2],
+	find_origin: Origin,
+	find_offset: Offset,
 
 	// shell
-	pub shell_title:  [String; 2],
-	pub shell_origin: Origin,
-	pub shell_offset: Offset,
+	shell_title:  [String; 2],
+	shell_origin: Origin,
+	shell_offset: Offset,
 }
 
 impl Input {
@@ -49,7 +44,7 @@ impl Input {
 		InputOpt {
 			name: "cd".to_owned(),
 			title: self.cd_title.clone(),
-			value: if cwd.kind().is_local() { String::new() } else { EncodeSpec(cwd).to_string() },
+			value: if cwd.is_regular() { String::new() } else { EncodeSpec(cwd).to_string() },
 			history: "shared".to_owned(),
 			position: Position::new(self.cd_origin, self.cd_offset),
 			completion: true,
@@ -95,16 +90,6 @@ impl Input {
 			history: "shared".to_owned(),
 			position: Position::new(self.find_origin, self.find_offset),
 			realtime: true,
-			..Default::default()
-		}
-	}
-
-	pub fn search(&self, name: &str) -> InputOpt {
-		InputOpt {
-			name: "search".to_owned(),
-			title: self.search_title.replace("{n}", name),
-			history: "shared".to_owned(),
-			position: Position::new(self.search_origin, self.search_offset),
 			..Default::default()
 		}
 	}

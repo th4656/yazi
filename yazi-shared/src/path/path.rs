@@ -2,6 +2,7 @@ use std::{borrow::Cow, ffi::OsStr};
 
 use anyhow::Result;
 use hashbrown::Equivalent;
+use yazi_shim::OptionExt;
 
 use super::{RsplitOnceError, StartsWithError};
 use crate::{BytesExt, Utf8BytePredictor, path::{Components, Display, DynPath, EndsWithError, JoinError, PathBufDyn, PathDynError, PathKind, StripPrefixError, StripSuffixError}, strand::{AsStrand, Strand, StrandError}};
@@ -55,6 +56,10 @@ impl Equivalent<PathBufDyn> for PathDyn<'_> {
 	fn equivalent(&self, key: &PathBufDyn) -> bool { *self == key.dyn_path() }
 }
 
+impl<'p> OptionExt<PathBufDyn> for Option<PathDyn<'p>> {
+	fn owned(self) -> Option<PathBufDyn> { self.map(PathDyn::to_owned) }
+}
+
 impl<'p> PathDyn<'p> {
 	#[inline]
 	pub fn as_os(self) -> Result<&'p std::path::Path, PathDynError> {
@@ -79,7 +84,7 @@ impl<'p> PathDyn<'p> {
 		}
 	}
 
-	pub fn display(self) -> Display<'p> { Display(self) }
+	pub(crate) fn display(self) -> Display<'p> { Display(self) }
 
 	pub fn encoded_bytes(self) -> &'p [u8] {
 		match self {
@@ -96,7 +101,7 @@ impl<'p> PathDyn<'p> {
 	}
 
 	#[inline]
-	pub unsafe fn from_encoded_bytes<K>(kind: K, bytes: &'p [u8]) -> Self
+	unsafe fn from_encoded_bytes<K>(kind: K, bytes: &'p [u8]) -> Self
 	where
 		K: Into<PathKind>,
 	{
@@ -106,14 +111,14 @@ impl<'p> PathDyn<'p> {
 		}
 	}
 
-	pub fn has_root(self) -> bool {
+	pub(crate) fn has_root(self) -> bool {
 		match self {
 			Self::Os(p) => p.has_root(),
 			Self::Unix(p) => p.has_root(),
 		}
 	}
 
-	pub fn is_absolute(self) -> bool {
+	pub(crate) fn is_absolute(self) -> bool {
 		match self {
 			Self::Os(p) => p.is_absolute(),
 			Self::Unix(p) => p.is_absolute(),
@@ -134,9 +139,9 @@ impl<'p> PathDyn<'p> {
 		}
 	}
 
-	pub fn len(self) -> usize { self.encoded_bytes().len() }
+	pub(crate) fn len(self) -> usize { self.encoded_bytes().len() }
 
-	pub fn name(self) -> Option<Strand<'p>> {
+	pub(crate) fn name(self) -> Option<Strand<'p>> {
 		Some(match self {
 			Self::Os(p) => p.file_name()?.into(),
 			Self::Unix(p) => p.file_name()?.into(),
@@ -150,7 +155,7 @@ impl<'p> PathDyn<'p> {
 		})
 	}
 
-	pub fn rsplit_pred<T>(self, pred: T) -> Option<(Self, Self)>
+	pub(crate) fn rsplit_pred<T>(self, pred: T) -> Option<(Self, Self)>
 	where
 		T: Utf8BytePredictor,
 	{
@@ -160,7 +165,7 @@ impl<'p> PathDyn<'p> {
 		})
 	}
 
-	pub fn stem(self) -> Option<Strand<'p>> {
+	pub(crate) fn stem(self) -> Option<Strand<'p>> {
 		Some(match self {
 			Self::Os(p) => p.file_stem()?.into(),
 			Self::Unix(p) => p.file_stem()?.into(),
@@ -182,7 +187,7 @@ impl<'p> PathDyn<'p> {
 		}
 	}
 
-	pub fn to_str(self) -> Result<&'p str, std::str::Utf8Error> {
+	pub(crate) fn to_str(self) -> Result<&'p str, std::str::Utf8Error> {
 		str::from_utf8(self.encoded_bytes())
 	}
 
@@ -195,7 +200,7 @@ impl<'p> PathDyn<'p> {
 		}
 	}
 
-	pub fn try_ends_with<T>(self, child: T) -> Result<bool, EndsWithError>
+	pub(crate) fn try_ends_with<T>(self, child: T) -> Result<bool, EndsWithError>
 	where
 		T: AsStrand,
 	{
@@ -217,7 +222,7 @@ impl<'p> PathDyn<'p> {
 		})
 	}
 
-	pub fn try_rsplit_seq<T>(self, pat: T) -> Result<(Self, Self), RsplitOnceError>
+	pub(crate) fn try_rsplit_seq<T>(self, pat: T) -> Result<(Self, Self), RsplitOnceError>
 	where
 		T: AsStrand,
 	{
@@ -236,7 +241,7 @@ impl<'p> PathDyn<'p> {
 		})
 	}
 
-	pub fn try_starts_with<T>(self, base: T) -> Result<bool, StartsWithError>
+	pub(crate) fn try_starts_with<T>(self, base: T) -> Result<bool, StartsWithError>
 	where
 		T: AsStrand,
 	{
@@ -247,7 +252,7 @@ impl<'p> PathDyn<'p> {
 		})
 	}
 
-	pub fn try_strip_prefix<T>(self, base: T) -> Result<Self, StripPrefixError>
+	pub(crate) fn try_strip_prefix<T>(self, base: T) -> Result<Self, StripPrefixError>
 	where
 		T: AsStrand,
 	{

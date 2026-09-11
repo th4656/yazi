@@ -1,26 +1,22 @@
-use std::{borrow::{Borrow, Cow}, ffi::OsStr, fmt::{Display, Formatter}, ops::Deref};
+use std::{borrow::Borrow, ffi::OsStr, fmt::{Display, Formatter}, ops::Deref};
 
+use compact_str::CompactString;
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::{BytesExt, SnakeCasedString};
+use crate::{BytesExt, SnakeCasedKey};
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(transparent)]
-pub struct KebabCasedKey(String);
+pub struct KebabCasedKey(CompactString);
 
 impl KebabCasedKey {
-	pub fn new(s: String) -> Option<Self> {
-		(!s.is_empty() && s.len() < 20 && s.as_bytes().kebab_cased()).then_some(Self(s))
+	pub(crate) fn new(s: impl Into<CompactString>) -> Option<Self> {
+		let s = s.into();
+		(!s.is_empty() && s.len() <= 20 && s.as_bytes().kebab_cased()).then_some(Self(s))
 	}
 
-	pub fn into_snake_cased(self) -> SnakeCasedString {
-		let mut b = self.0.into_bytes();
-		b.iter_mut().for_each(|c| {
-			if *c == b'-' {
-				*c = b'_'
-			}
-		});
-		SnakeCasedString(unsafe { String::from_utf8_unchecked(b) })
+	pub fn into_snake_cased(self) -> SnakeCasedKey {
+		SnakeCasedKey(self.0.chars().map(|c| if c == '-' { '_' } else { c }).collect())
 	}
 }
 
@@ -34,11 +30,6 @@ impl Deref for KebabCasedKey {
 impl Borrow<str> for KebabCasedKey {
 	#[inline]
 	fn borrow(&self) -> &str { &self.0 }
-}
-
-impl Borrow<String> for KebabCasedKey {
-	#[inline]
-	fn borrow(&self) -> &String { &self.0 }
 }
 
 impl AsRef<str> for KebabCasedKey {
@@ -55,21 +46,10 @@ impl Display for KebabCasedKey {
 	fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result { Display::fmt(&self.0, f) }
 }
 
-impl From<KebabCasedKey> for String {
-	#[inline]
-	fn from(value: KebabCasedKey) -> Self { value.0 }
-}
-
-impl From<KebabCasedKey> for Cow<'_, str> {
-	#[inline]
-	fn from(value: KebabCasedKey) -> Self { Cow::Owned(value.0) }
-}
-
 impl<'de> Deserialize<'de> for KebabCasedKey {
 	fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-		let value = String::deserialize(deserializer)?;
-		Self::new(value).ok_or_else(|| {
-			serde::de::Error::custom("must be a non-empty kebab-cased key shorter than 20 characters")
-		})
+		let value = CompactString::deserialize(deserializer)?;
+		Self::new(value)
+			.ok_or_else(|| serde::de::Error::custom("must be 1-20 characters in kebab-case"))
 	}
 }

@@ -1,9 +1,9 @@
-use mlua::{AnyUserData, ExternalError, ExternalResult, Lua, LuaString, MetaMethod, UserData, UserDataFields, UserDataMethods, UserDataRef, Value};
-use yazi_shim::mlua::UserDataFieldsExt;
+use mlua::{AnyUserData, ExternalError, ExternalResult, IntoLua, Lua, LuaString, MetaMethod, UserData, UserDataFields, UserDataMethods, UserDataRef, Value};
+use yazi_shim::{OptionExt, log::LOG_LEVEL, mlua::UserDataFieldsExt};
 
-use crate::{LOG_LEVEL, path::{PathBufDyn, PathLike, StripPrefixError}, strand::{AsStrand, StrandCow}};
+use crate::{path::{PathBufDyn, PathDyn, PathLike, StripPrefixError}, strand::{AsStrand, StrandCow}};
 
-pub type PathRef = UserDataRef<PathBufDyn>;
+type PathRef = UserDataRef<PathBufDyn>;
 
 impl PathBufDyn {
 	pub fn install(lua: &Lua) -> mlua::Result<()> {
@@ -19,36 +19,27 @@ impl PathBufDyn {
 	}
 
 	fn ends_with(&self, child: Value) -> mlua::Result<bool> {
-		match child {
-			Value::String(s) => {
-				self.try_ends_with(StrandCow::with(self.kind(), &*s.as_bytes())?).into_lua_err()
-			}
-			Value::UserData(ud) => self.try_ends_with(&*ud.borrow::<Self>()?).into_lua_err(),
+		Ok(match child {
+			Value::String(s) => self.try_ends_with(StrandCow::with(self.kind(), &*s.as_bytes())?)?,
+			Value::UserData(ud) => self.try_ends_with(&*ud.borrow::<Self>()?)?,
 			_ => Err("must be a string or Path".into_lua_err())?,
-		}
+		})
 	}
 
 	fn join(&self, other: Value) -> mlua::Result<Self> {
 		Ok(match other {
-			Value::String(s) => {
-				self.try_join(StrandCow::with(self.kind(), &*s.as_bytes())?).into_lua_err()?
-			}
-			Value::UserData(ref ud) => {
-				let path = ud.borrow::<Self>()?;
-				self.try_join(&*path).into_lua_err()?
-			}
+			Value::String(s) => self.try_join(StrandCow::with(self.kind(), &*s.as_bytes())?)?,
+			Value::UserData(ref ud) => self.try_join(&*ud.borrow::<Self>()?)?,
 			_ => Err("must be a string or Path".into_lua_err())?,
 		})
 	}
 
 	fn starts_with(&self, base: Value) -> mlua::Result<bool> {
-		match base {
-			Value::String(s) => {
-				self.try_starts_with(StrandCow::with(self.kind(), &*s.as_bytes())?).into_lua_err()
-			}
-			Value::UserData(ud) => self.try_starts_with(&*ud.borrow::<Self>()?).into_lua_err(),
+		Ok(match base {
+			Value::String(s) => self.try_starts_with(StrandCow::with(self.kind(), &*s.as_bytes())?)?,
+			Value::UserData(ud) => self.try_starts_with(&*ud.borrow::<Self>()?)?,
 			_ => Err("must be a string or Path".into_lua_err())?,
-		}
+		})
 	}
 
 	fn strip_prefix(&self, base: Value) -> mlua::Result<Option<Self>> {
@@ -61,9 +52,13 @@ impl PathBufDyn {
 		Ok(match strip {
 			Ok(p) => Some(p.to_owned()),
 			Err(StripPrefixError::Exotic | StripPrefixError::NotPrefix) => None,
-			Err(e @ StripPrefixError::WrongEncoding) => Err(e.into_lua_err())?,
+			Err(e @ StripPrefixError::WrongEncoding) => Err(e)?,
 		})
 	}
+}
+
+impl IntoLua for PathDyn<'_> {
+	fn into_lua(self, lua: &Lua) -> mlua::Result<Value> { self.to_owned().into_lua(lua) }
 }
 
 impl UserData for PathBufDyn {
@@ -74,7 +69,7 @@ impl UserData for PathBufDyn {
 		fields.add_cached_field("name", |lua, me| {
 			me.name().map(|s| lua.create_string(s.encoded_bytes())).transpose()
 		});
-		fields.add_cached_field("parent", |_, me| Ok(me.parent().map(|p| p.to_owned())));
+		fields.add_cached_field("parent", |_, me| Ok(me.parent().owned()));
 		fields.add_cached_field("stem", |lua, me| {
 			me.stem().map(|s| lua.create_string(s.encoded_bytes())).transpose()
 		});
@@ -92,6 +87,7 @@ impl UserData for PathBufDyn {
 		methods.add_meta_method(MetaMethod::Concat, |lua, lhs, rhs: LuaString| {
 			lua.create_external_string([lhs.encoded_bytes(), &rhs.as_bytes()].concat())
 		});
+		methods.add_meta_method(MetaMethod::Len, |_, me, ()| Ok(me.len()));
 		methods.add_meta_method(MetaMethod::Eq, |_, me, other: PathRef| Ok(*me == *other));
 		methods
 			.add_meta_method(MetaMethod::ToString, |lua, me, ()| lua.create_string(me.encoded_bytes()));

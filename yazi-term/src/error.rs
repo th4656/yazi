@@ -1,6 +1,6 @@
-use std::{num, str};
+use std::{num, str, string};
 
-pub type Result<T, E = ParseError> = std::result::Result<T, E>;
+pub(crate) type Result<T, E = ParseError> = std::result::Result<T, E>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ParseError {
@@ -20,6 +20,14 @@ impl From<str::Utf8Error> for ParseError {
 	fn from(_: str::Utf8Error) -> Self { Self::Invalid }
 }
 
+impl From<string::FromUtf8Error> for ParseError {
+	fn from(_: string::FromUtf8Error) -> Self { Self::Invalid }
+}
+
 impl From<num::ParseIntError> for ParseError {
 	fn from(_: num::ParseIntError) -> Self { Self::Invalid }
+}
+
+impl From<base64::DecodeError> for ParseError {
+	fn from(_: base64::DecodeError) -> Self { Self::Invalid }
 }

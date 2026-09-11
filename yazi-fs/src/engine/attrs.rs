@@ -67,13 +67,15 @@ impl TryFrom<Attrs> for std::fs::Permissions {
 impl Attrs {
 	pub fn mode(mode: ChaMode) -> Self { Self { mode: Some(mode), ..Default::default() } }
 
-	pub fn has_times(self) -> bool {
-		self.atime.is_some() || self.btime.is_some() || self.mtime.is_some()
+	fn has_times(self) -> bool {
+		self.atime.is_some()
+			|| self.mtime.is_some()
+			|| (self.btime.is_some() && cfg!(any(target_os = "macos", target_os = "windows")))
 	}
 
 	pub fn atime_dur(self) -> Option<Duration> { self.atime?.duration_since(UNIX_EPOCH).ok() }
 
-	pub fn btime_dur(self) -> Option<Duration> { self.btime?.duration_since(UNIX_EPOCH).ok() }
+	fn btime_dur(self) -> Option<Duration> { self.btime?.duration_since(UNIX_EPOCH).ok() }
 
 	pub fn mtime_dur(self) -> Option<Duration> { self.mtime?.duration_since(UNIX_EPOCH).ok() }
 }

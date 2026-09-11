@@ -18,7 +18,7 @@ impl SizeCalculator {
 	{
 		let url = url.as_url();
 		let cha = super::symlink_metadata(url).await?;
-		Ok(if cha.is_dir() {
+		Ok(if cha.is_dir() && !cha.is_indirect() {
 			Self::Dir(VecDeque::from([Either::Left(url.to_owned())]), cha)
 		} else {
 			Self::File(Some(cha.len), cha)
@@ -31,7 +31,7 @@ impl SizeCalculator {
 		}
 	}
 
-	pub async fn total<U>(url: U) -> io::Result<u64>
+	pub(crate) async fn total<U>(url: U) -> io::Result<u64>
 	where
 		U: AsUrl,
 	{
@@ -73,14 +73,14 @@ impl SizeCalculator {
 				};
 			}
 
-			let Ok(Some(ent)) = front.as_mut().right()?.next().await else {
+			let Ok(Some(dent)) = front.as_mut().right()?.next().await else {
 				pop_and_continue!();
 			};
 
-			let Ok(ft) = ent.file_type().await else { continue };
-			if ft.is_dir() {
-				buf.push_back(Either::Left(ent.url()));
-			} else if let Ok(cha) = ent.metadata().await {
+			let Ok(cha) = dent.metadata().await else { continue };
+			if cha.is_dir() && !cha.is_indirect() {
+				buf.push_back(Either::Left(dent.url()));
+			} else {
 				size += cha.len;
 			}
 		}

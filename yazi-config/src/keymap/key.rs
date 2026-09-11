@@ -9,16 +9,16 @@ use yazi_term::event::{KeyCode, KeyEvent, Modifiers};
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct Key {
 	#[serde(flatten)]
-	pub code:   KeyCode,
-	pub shift:  bool,
-	pub ctrl:   bool,
-	pub alt:    bool,
+	pub code: KeyCode,
+	shift:    bool,
+	ctrl:     bool,
+	alt:      bool,
 	#[serde(rename = "super")]
-	pub super_: bool,
+	super_:   bool,
 }
 
 impl Key {
-	pub fn plain(&self) -> Option<char> {
+	fn plain(&self) -> Option<char> {
 		if self.ctrl || self.alt || self.super_ {
 			None
 		} else if self.shift && !self.code.implies_shift() {
@@ -33,11 +33,16 @@ impl Key {
 
 impl From<KeyEvent> for Key {
 	fn from(value: KeyEvent) -> Self {
+		let (code, shift) = match value.text(&mut [0; 4]).and_then(|s| s.parse().ok()) {
+			Some(c) => (KeyCode::Char(c), c.is_uppercase()),
+			None => (value.code, value.modifiers.contains(Modifiers::SHIFT)),
+		};
+
 		Self {
-			code:   value.code,
-			shift:  value.modifiers.contains(Modifiers::SHIFT),
-			ctrl:   value.modifiers.contains(Modifiers::CONTROL),
-			alt:    value.modifiers.contains(Modifiers::ALT),
+			code,
+			shift,
+			ctrl: value.modifiers.contains(Modifiers::CONTROL),
+			alt: value.modifiers.contains(Modifiers::ALT),
 			super_: value.modifiers.contains(Modifiers::SUPER),
 		}
 	}
@@ -54,7 +59,7 @@ impl FromStr for Key {
 		let mut key = Self::default();
 		if !s.starts_with('<') || !s.ends_with('>') {
 			key.code = KeyCode::Char(s.chars().next().unwrap());
-			key.shift = matches!(key.code, KeyCode::Char(c) if c.is_ascii_uppercase());
+			key.shift = matches!(key.code, KeyCode::Char(c) if c.is_uppercase());
 			return Ok(key);
 		}
 
@@ -104,7 +109,7 @@ impl FromStr for Key {
 				_ => match next {
 					s if it.peek().is_none() => {
 						let c = s.chars().next().unwrap();
-						key.shift |= c.is_ascii_uppercase();
+						key.shift |= c.is_uppercase();
 						key.code = KeyCode::Char(if key.shift { c.to_ascii_uppercase() } else { c });
 					}
 					s => bail!("unknown key: {s}"),

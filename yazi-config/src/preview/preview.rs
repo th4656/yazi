@@ -5,7 +5,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use yazi_codegen::DeserializeOver2;
 use yazi_fs::{Xdg, create_owned_dir_blocking, path::sanitize_path};
 use yazi_shared::timestamp_us;
-use yazi_shim::{SStr, toml::DeserializeOverHook};
+use yazi_shim::toml::DeserializeOverHook;
 
 use super::PreviewWrap;
 
@@ -33,24 +33,13 @@ impl Preview {
 	pub fn tmpfile(&self, prefix: &str) -> PathBuf {
 		self.cache_dir.join(format!("{prefix}-{}", timestamp_us()))
 	}
-
-	pub fn indent(&self) -> SStr {
-		#[rustfmt::skip]
-		const TABS: &[&str] = &["", " ", "  ", "   ", "    ", "     ", "      ", "       ", "        ", "         ", "          ", "           ", "            ", "             ", "              ", "               ", "                "];
-
-		if let Some(&s) = TABS.get(self.tab_size as usize) {
-			s.into()
-		} else {
-			" ".repeat(self.tab_size as usize).into()
-		}
-	}
 }
 
 impl DeserializeOverHook for Preview {
 	fn deserialize_over_hook(self) -> Result<Self, toml::de::Error> {
 		create_owned_dir_blocking(&self.cache_dir)
 			.context(format!("Failed to create cache directory: {}", self.cache_dir.display()))
-			.map_err(serde::de::Error::custom)?;
+			.map_err(|err| serde::de::Error::custom(format!("{err:#}")))?;
 
 		Ok(self)
 	}

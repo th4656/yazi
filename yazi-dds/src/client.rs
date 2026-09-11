@@ -5,14 +5,13 @@ use hashbrown::{HashMap, HashSet};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use tokio::{io::AsyncWriteExt, select, sync::mpsc, task::JoinHandle, time};
-use tracing::error;
-use yazi_macro::try_format;
+use yazi_boot::ID;
+use yazi_macro::{error, try_format};
 use yazi_shared::id::Id;
 use yazi_shim::cell::RoCell;
 
 use crate::{ClientReader, ClientWriter, Payload, Pubsub, Server, Stream, ember::{Ember, EmberHey}};
 
-pub static ID: RoCell<Id> = RoCell::new();
 pub(super) static PEERS: RoCell<RwLock<HashMap<Id, Peer>>> = RoCell::new();
 
 pub(super) static QUEUE_TX: RoCell<mpsc::UnboundedSender<String>> = RoCell::new();
@@ -27,7 +26,7 @@ pub struct Client {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Peer {
-	pub(super) abilities: HashSet<String>,
+	abilities: HashSet<String>,
 }
 
 impl Client {
@@ -89,7 +88,7 @@ impl Client {
 		loop {
 			if let Ok(conn) = Stream::connect().await {
 				Pubsub::pub_inner_hi();
-				tracing::debug!("Connected to existing DDS server on instance {ID}");
+				yazi_macro::debug!("Connected to existing DDS server on instance {ID}");
 				return conn;
 			}
 
@@ -98,10 +97,12 @@ impl Client {
 				Ok(h) => {
 					*server = Some(h);
 					super::STATE.load_or_create().await;
-					tracing::debug!("Started new DDS server on instance {ID}");
+					yazi_macro::debug!("Started new DDS server on instance {ID}");
 				}
 				Err(e) => {
-					tracing::error!("Could not connect to or start a new DDS server on instance {ID}: {e}");
+					yazi_macro::error!(
+						"Could not connect to or start a new DDS server on instance {ID}: {e}"
+					);
 				}
 			}
 

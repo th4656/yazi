@@ -1,6 +1,8 @@
-use crate::{Dimension, event::{DndEvent, KeyEvent, MouseEvent}};
+use strum::EnumIs;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+use crate::{Dimension, event::{ClipboardEvent, DndEvent, KeyEvent, MouseEvent, Report}};
+
+#[derive(Clone, Debug, EnumIs, Eq, PartialEq)]
 pub enum Event {
 	Key(KeyEvent),
 	Mouse(MouseEvent),
@@ -9,4 +11,6 @@ pub enum Event {
 	FocusOut,
 	Paste(String),
 	Dnd(DndEvent),
+	Clipboard(ClipboardEvent),
+	Report(Report),
 }

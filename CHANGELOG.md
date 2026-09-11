@@ -14,10 +14,49 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/):
 
 ### Added
 
-- Drag and drop ([#4005])
+- Dynamic virtual filesystem Lua API ([#4338])
+
+### Changed
+
+- Supersede `search` action with `plugin rg` and `plugin fd` ([#4335])
+- Rename `Spec::is_search` property and `escape --search` action to `Spec::is_view` and `escape --view`, respectively ([#4335])
+- Move `search_title`, `search_origin`, and `search_offset` from `[input]` in `yazi.toml` to `[rg]`/`[fd]` in `theme.toml` as `title` and `position` ([#4335])
+
+### Fixed
+
+- Compatibility with legacy Git symlinks in package cache ([#4319])
+- Tolerate non-conforming orphaned trash items on Linux ([#4343])
+
+## [v26.9.1]
+
+### Fixed
+
+- Assertion failure on expanding URLs with variables containing absolute paths ([#4256])
+- Correct open rule matching for trashed directories ([#4268])
+- Lock directories under timeless mounts on first peek ([#4306])
+- Honor associated text when matching character keybindings ([#4279])
+- Materialize Git symlinks for consistent hashes ([#4276])
+- Prune stale backstack entries on file invalidation ([#4309])
+- Wait for terminal probe echo back before stopping instance ([#4271])
+- Avoid flicker caused by screen clear on final response from terminal ([#4250])
+- Fall back when `vergen` cannot determine Git SHA ([#4252])
+
+### Improved
+
+- Kitty graphics over shared memory ([#4294])
+- Send terminal probe requests immediately at startup ([#4260])
+- Tune light/dark theme detection ([#4265])
+
+## [v26.8.15]
+
+### Added
+
+- Drag and drop ([#4005], [#4225])
+- Trash bin ([#4144], [#4204], [#4212])
 - Bulk create ([#3793])
 - Make help menu a command palette ([#4074])
 - Input history ([#4104])
+- Automatic dark/light theme switching ([#4196])
 - Experimental `%y`, `%Y`, `%t`, `%T`, `%yN`, `%YN`, `%tN`, `%TN` shell formatting parameters ([#4108])
 - Custom VFS provider ([#4118])
 - Make visual mode support wraparound scrolling ([#4101])
@@ -25,14 +64,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/):
 - Context-aware icons for inputs ([#4080])
 - Show file icons in trash/delete/overwrite confirmations ([#4096])
 - Dynamic keymap Lua API ([#4031])
+- Dynamic Lua API for preloader, spotter, fetcher ([#4235])
+- Configurable border for the which component ([#4189])
+- Official APT repository for Debian and Ubuntu ([#4198])
+- New `--follow` option for the `link` action ([#4184])
 - New `ui.Input` element ([#4040])
+- New `theme` DDS event for plugins to watch theme reloads ([#4203])
+- Preview images in Zellij via kitty graphics protocol ([#4216])
 - Image preview with Überzug++ on Niri ([#3990])
+- Unicode normalization for user regex patterns in `find`, `filter`, and `search` actions ([#4177])
 - New gait for input `backward` and `forward` actions ([#4012])
 
 ### Changed
 
 - Rename SFTP sections in `vfs.toml` from `[services.domain]` to `[sftp.domain]` ([#4120]).
 - Rename `<BackTab>` to `<S-Tab>` ([#3989])
+- Make `rt.term.light` a function that returns the latest color scheme on each call ([#4196])
 - Remove `Url.is_archive` - `archive://` is no longer built in and can now be registered by plugins ([#4118])
 - Make `mgr::Yanked`, `tab::Selected`, and the `@yank` DDS event return `File` instead of `Url` from `__pairs()` ([#4096])
 - Remove `help:filter` action since the filter input is now always available ([#4074])
@@ -41,12 +88,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/):
 
 ### Deprecated
 
+- Deprecate `copy dirname` in favor of `copy dirpath` ([#4169])
 - Deprecate `backward --far` and `forward --far` in favor of `backward wide` and `forward wide`, respectively ([#4012])
 - Deprecate `tab::Mode.is_visual` in favor of the new `tab::Mode.is_normal` ([#4101])
 - Deprecate `Url.is_regular`, `Url.is_search`, and `Url.domain` in favor of `Url.spec.is_regular`, `Url.spec.is_search`, and `Url.spec.domain`, respectively ([#4118])
 
 ### Fixed
 
+- Refresh file list after deleting a file from search view ([#4174])
+- Work around image previews broken by a `tmux` 3.7b redraw bug ([#4195])
 - Normalize `\\?\`-prefixed Verbatim paths when creating relative symlinks on Windows ([#4067])
 - Keep package hashes indifferent to line endings when `ya pkg` pulls packages ([#4064])
 - Use WebP as `magick` preset preloader cache format to keep image transparency ([#4065])
@@ -55,6 +105,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/):
 ### Improved
 
 - Eliminate hacks in image and UI conflict resolution ([#4022])
+- Make terminal capability probing async ([#4194])
+- Enable SSO (small string optimization) for custom schemes and custom styles ([#4164])
+- Reduce binary size and build time ([#4228])
 
 ## [v26.5.6]
 
@@ -1114,6 +1167,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/):
 [v26.1.4]: https://github.com/sxyazi/yazi/compare/v25.12.29...v26.1.4
 [v26.1.22]: https://github.com/sxyazi/yazi/compare/v26.1.4...v26.1.22
 [v26.5.6]: https://github.com/sxyazi/yazi/compare/v26.1.22...v26.5.6
+[v26.8.15]: https://github.com/sxyazi/yazi/compare/v26.5.6...v26.8.15
+[v26.9.1]: https://github.com/sxyazi/yazi/compare/v26.8.15...v26.9.1
 [#4]: https://github.com/sxyazi/yazi/pull/4
 [#5]: https://github.com/sxyazi/yazi/pull/5
 [#6]: https://github.com/sxyazi/yazi/pull/6
@@ -1781,3 +1836,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/):
 [#4108]: https://github.com/sxyazi/yazi/pull/4108
 [#4118]: https://github.com/sxyazi/yazi/pull/4118
 [#4120]: https://github.com/sxyazi/yazi/pull/4120
+[#4144]: https://github.com/sxyazi/yazi/pull/4144
+[#4164]: https://github.com/sxyazi/yazi/pull/4164
+[#4169]: https://github.com/sxyazi/yazi/pull/4169
+[#4174]: https://github.com/sxyazi/yazi/pull/4174
+[#4177]: https://github.com/sxyazi/yazi/pull/4177
+[#4184]: https://github.com/sxyazi/yazi/pull/4184
+[#4189]: https://github.com/sxyazi/yazi/pull/4189
+[#4194]: https://github.com/sxyazi/yazi/pull/4194
+[#4195]: https://github.com/sxyazi/yazi/pull/4195
+[#4196]: https://github.com/sxyazi/yazi/pull/4196
+[#4198]: https://github.com/sxyazi/yazi/pull/4198
+[#4203]: https://github.com/sxyazi/yazi/pull/4203
+[#4204]: https://github.com/sxyazi/yazi/pull/4204
+[#4212]: https://github.com/sxyazi/yazi/pull/4212
+[#4216]: https://github.com/sxyazi/yazi/pull/4216
+[#4225]: https://github.com/sxyazi/yazi/pull/4225
+[#4228]: https://github.com/sxyazi/yazi/pull/4228
+[#4235]: https://github.com/sxyazi/yazi/pull/4235
+[#4250]: https://github.com/sxyazi/yazi/pull/4250
+[#4252]: https://github.com/sxyazi/yazi/pull/4252
+[#4256]: https://github.com/sxyazi/yazi/pull/4256
+[#4260]: https://github.com/sxyazi/yazi/pull/4260
+[#4265]: https://github.com/sxyazi/yazi/pull/4265
+[#4268]: https://github.com/sxyazi/yazi/pull/4268
+[#4271]: https://github.com/sxyazi/yazi/pull/4271
+[#4276]: https://github.com/sxyazi/yazi/pull/4276
+[#4279]: https://github.com/sxyazi/yazi/pull/4279
+[#4294]: https://github.com/sxyazi/yazi/pull/4294
+[#4306]: https://github.com/sxyazi/yazi/pull/4306
+[#4309]: https://github.com/sxyazi/yazi/pull/4309
+[#4319]: https://github.com/sxyazi/yazi/pull/4319
+[#4335]: https://github.com/sxyazi/yazi/pull/4335
+[#4338]: https://github.com/sxyazi/yazi/pull/4338
+[#4343]: https://github.com/sxyazi/yazi/pull/4343

@@ -1,17 +1,17 @@
 use std::io;
 
-use tokio::{select, sync::mpsc::{self, UnboundedReceiver}};
-use yazi_fs::{Entries, FilesOp, cha::Cha, engine::{DirReader, FileHolder}, file::File, mounts::PARTITIONS};
+use tokio::{join, select, sync::mpsc::{self, UnboundedReceiver}};
+use yazi_fs::{Entries, engine::{DirReader, FileHolder}, file::File, mounts::PARTITIONS};
 use yazi_shared::url::UrlBuf;
 
-use crate::{VfsCha, VfsFile, VfsFilesOp, engine::{self, DirEntry}};
+use crate::engine::{self, DirEntry};
 
 pub trait VfsEntries {
 	fn from_dir(dir: &UrlBuf) -> impl Future<Output = io::Result<UnboundedReceiver<File>>>;
 
 	fn from_dir_bulk(dir: &UrlBuf) -> impl Future<Output = io::Result<Vec<File>>>;
 
-	fn assert_stale(dir: &UrlBuf, cha: Cha) -> impl Future<Output = Option<Cha>>;
+	fn revalidate(file: &File) -> impl Future<Output = io::Result<Option<File>>>;
 }
 
 impl VfsEntries for Entries {
@@ -20,15 +20,22 @@ impl VfsEntries for Entries {
 		let (tx, rx) = mpsc::unbounded_channel();
 
 		tokio::spawn(async move {
-			while let Ok(Some(ent)) = it.next().await {
+			loop {
+				let future = async {
+					let dent = it.next().await.ok().flatten()?;
+					Some(match dent.file().await {
+						Ok(file) => file,
+						Err(_) => File::from_dummy(dent.url(), dent.file_type().await.ok()),
+					})
+				};
+
 				select! {
 					_ = tx.closed() => break,
-					result = ent.metadata() => {
-						let url = ent.url();
-						_ = tx.send(match result {
-							Ok(cha) => File::from_follow(url, cha).await,
-							Err(_) => File::from_dummy(url, ent.file_type().await.ok())
-						});
+					file = future => {
+						let Some(file) = file else { break };
+						if tx.send(file).is_err() {
+							break;
+						}
 					}
 				}
 			}
@@ -36,44 +43,39 @@ impl VfsEntries for Entries {
 		Ok(rx)
 	}
 
-	async fn from_dir_bulk(dir: &UrlBuf) -> std::io::Result<Vec<File>> {
+	async fn from_dir_bulk(dir: &UrlBuf) -> io::Result<Vec<File>> {
 		let mut it = engine::read_dir(dir).await?;
 		let mut entries = Vec::new();
-		while let Ok(Some(entry)) = it.next().await {
-			entries.push(entry);
+		while let Ok(Some(dent)) = it.next().await {
+			entries.push(dent);
 		}
 
 		let (first, rest) = entries.split_at(entries.len() / 3);
 		let (second, third) = rest.split_at(entries.len() / 3);
 		async fn go(entries: &[DirEntry]) -> Vec<File> {
 			let mut files = Vec::with_capacity(entries.len());
-			for ent in entries {
-				let url = ent.url();
-				files.push(match ent.metadata().await {
-					Ok(cha) => File::from_follow(url, cha).await,
-					Err(_) => File::from_dummy(url, ent.file_type().await.ok()),
+			for dent in entries {
+				files.push(match dent.file().await {
+					Ok(file) => file,
+					Err(_) => File::from_dummy(dent.url(), dent.file_type().await.ok()),
 				});
 			}
 			files
 		}
 
-		Ok(
-			futures::future::join_all([go(first), go(second), go(third)])
-				.await
-				.into_iter()
-				.flatten()
-				.collect(),
-		)
+		let (first, second, third) = join!(go(first), go(second), go(third));
+		Ok([first, second, third].into_iter().flatten().collect())
 	}
 
-	async fn assert_stale(dir: &UrlBuf, cha: Cha) -> Option<Cha> {
-		use std::io::ErrorKind;
-		match Cha::from_url(dir).await {
-			Ok(c) if !c.is_dir() => FilesOp::issue_error(dir, ErrorKind::NotADirectory).await,
-			Ok(c) if c.hits(cha) && !PARTITIONS.read().timeless(cha) => {}
-			Ok(c) => return Some(c),
-			Err(e) => FilesOp::issue_error(dir, e).await,
+	async fn revalidate(old: &File) -> io::Result<Option<File>> {
+		match engine::revalidate(old).await? {
+			Some(new) if new.url != old.url => {
+				Err(io::Error::new(io::ErrorKind::InvalidData, "revalidated file URL changed"))
+			}
+			Some(new) if !new.is_dir() => Err(io::ErrorKind::NotADirectory.into()),
+			Some(new) => Ok(Some(new)),
+			None if PARTITIONS.read().timeless(old.cha) => Ok(Some(old.clone())),
+			None => Ok(None),
 		}
-		None
 	}
 }

@@ -31,17 +31,17 @@ impl Dependency {
 		let assets = self.target().join("assets");
 		match tokio::fs::read_dir(&assets).await {
 			Ok(mut it) => {
-				while let Some(entry) = it.next_entry().await? {
-					remove_sealed(&entry.path())
+				while let Some(dent) = it.next_entry().await? {
+					remove_sealed(&dent.path())
 						.await
-						.with_context(|| format!("failed to remove `{}`", entry.path().display()))?;
+						.with_context(|| format!("failed to remove `{}`", dent.path().display()))?;
 				}
 			}
 			Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
 			Err(e) => Err(e).context(format!("failed to read `{}`", assets.display()))?,
 		};
 
-		Local::regular(&assets).remove_dir_clean().await;
+		Local::regular(&assets).remove_dir_clean().await.ok();
 		Ok(())
 	}
 

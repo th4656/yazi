@@ -17,26 +17,33 @@ default      = [ "vendored-lua" ]
 vendored-lua = [ "mlua/vendored" ]
 
 [dependencies]
-yazi-codegen = { path = "../yazi-codegen", version = "26.5.6" }
-yazi-macro   = { path = "../yazi-macro", version = "26.5.6" }
-yazi-shim    = { path = "../yazi-shim", version = "26.5.6" }
+yazi-codegen = { path = "../yazi-codegen", version = "26.9.1" }
+yazi-macro   = { path = "../yazi-macro", version = "26.9.1" }
+yazi-shared  = { path = "../yazi-shared", version = "26.9.1" }
+yazi-shim    = { path = "../yazi-shim", version = "26.9.1" }
 
 # External dependencies
 ansi-to-tui     = { workspace = true }
 anyhow          = { workspace = true }
+compact_str     = { workspace = true }
 futures         = { workspace = true }
 hashbrown       = { workspace = true }
+http-body-util  = "0.1.5"
+hyper           = { version = "1.11.1", features = [ "client", "http1" ] }
+hyper-util      = { version = "0.1.20", features = [ "tokio" ] }
 image           = { workspace = true }
+inventory       = { workspace = true }
 mlua            = { workspace = true }
 ratatui-core    = { workspace = true }
 ratatui-widgets = { workspace = true }
+reqwest         = { workspace = true }
 serde           = { workspace = true }
-serde_json      = { workspace = true }
 strum           = { workspace = true }
 tokio    	      = { workspace = true }
+tokio-util      = { workspace = true }
 unicode-width   = { workspace = true }
 
-[target.'cfg(unix)'.dependencies]
+[target."cfg(unix)".dependencies]
 libc = { workspace = true }
 
 [target."cfg(windows)".dependencies]

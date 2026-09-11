@@ -2,7 +2,7 @@ use anyhow::{Result, bail};
 use yazi_config::{YAZI, popup::ConfirmCfg};
 use yazi_dds::Pubsub;
 use yazi_fs::{FilesOp, file::File};
-use yazi_macro::{act, err, input, ok_or_not_found, succ};
+use yazi_macro::{act, input, log_if_err, ok_or_not_found, succ};
 use yazi_parser::mgr::RenameForm;
 use yazi_proxy::{ConfirmProxy, MgrProxy};
 use yazi_shared::{data::Data, id::Id, url::{UrlBuf, UrlLike}};
@@ -66,8 +66,8 @@ impl Actor for Rename {
 
 impl Rename {
 	async fn r#do(tab: Id, old: UrlBuf, new: UrlBuf) -> Result<()> {
-		let Some((old_p, old_k)) = old.pair2() else { return Ok(()) };
-		let Some(_) = new.pair2() else { return Ok(()) };
+		let Some((old_t, old_k)) = old.pair() else { return Ok(()) };
+		let Some(_) = new.pair() else { return Ok(()) };
 		let _permit = WATCHER.acquire().await.unwrap();
 
 		let overwritten = engine::casefold(&new).await;
@@ -75,25 +75,25 @@ impl Rename {
 
 		if let Ok(u) = overwritten
 			&& u != new
-			&& let Some((parent, key)) = u.pair2()
+			&& let Some((trail, key)) = u.pair()
 		{
 			ok_or_not_found!(engine::rename(&u, &new).await);
-			FilesOp::Deleting(parent.to_owned(), [key.into()].into()).emit();
+			FilesOp::Deleting(trail.to_owned(), [key.into()].into()).emit();
 		}
 
 		let new = engine::casefold(&new).await?;
-		let Some((new_p, new_k)) = new.pair2() else { return Ok(()) };
+		let Some((new_t, new_k)) = new.pair() else { return Ok(()) };
 
-		let file = File::new(&new).await?;
-		if new_p == old_p {
-			FilesOp::Upserting(old_p.into(), [(old_k.into(), file)].into()).emit();
+		let file = engine::file(&new).await?;
+		if new_t == old_t {
+			FilesOp::Upserting(old_t.into(), [(old_k.into(), file)].into()).emit();
 		} else {
-			FilesOp::Deleting(old_p.into(), [old_k.into()].into()).emit();
-			FilesOp::Upserting(new_p.into(), [(new_k.into(), file)].into()).emit();
+			FilesOp::Deleting(old_t.into(), [old_k.into()].into()).emit();
+			FilesOp::Upserting(new_t.into(), [(new_k.into(), file)].into()).emit();
 		}
 
 		MgrProxy::reveal(&new);
-		err!(Pubsub::pub_after_rename(tab, &old, &new));
+		log_if_err!(Pubsub::pub_after_rename(tab, &old, &new));
 		Ok(())
 	}
 

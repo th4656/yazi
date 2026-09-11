@@ -1,8 +1,7 @@
 use std::pin::Pin;
 
 use anyhow::{Result, bail};
-use futures::{Stream, StreamExt};
-use tokio_stream::wrappers::UnboundedReceiverStream;
+use tokio_stream::{Stream, StreamExt, wrappers::UnboundedReceiverStream};
 use yazi_config::{YAZI, popup::ConfirmCfg};
 use yazi_fs::{FilesOp, file::File};
 use yazi_macro::{input, ok_or_not_found, succ};
@@ -26,9 +25,7 @@ impl Actor for Create {
 
 		let mut target: Pin<Box<dyn Stream<Item = StrandBuf> + Send>> = if target.is_empty() {
 			let input = input!(cx, YAZI.input.create(dir))?;
-			Box::pin(
-				UnboundedReceiverStream::new(input).filter_map(|event| async { event.map(Into::into) }),
-			)
+			Box::pin(UnboundedReceiverStream::new(input).filter_map(|event| event.map(Into::into)))
 		} else {
 			Box::pin(tokio_stream::iter(vec![target]))
 		};
@@ -64,10 +61,10 @@ impl Create {
 		if dir {
 			engine::create_dir_all(&new).await?;
 		} else if let Ok(real) = engine::casefold(&new).await
-			&& let Some((parent, key)) = real.pair2()
+			&& let Some((trail, key)) = real.pair()
 		{
 			ok_or_not_found!(engine::remove_file(&new).await);
-			FilesOp::Deleting(parent.into(), [key.into()].into()).emit();
+			FilesOp::Deleting(trail.into(), [key.into()].into()).emit();
 			engine::create(&new).await?;
 		} else if let Some(parent) = new.parent() {
 			engine::create_dir_all(parent).await.ok();
@@ -78,10 +75,10 @@ impl Create {
 		}
 
 		if let Ok(real) = engine::casefold(&new).await
-			&& let Some((parent, key)) = real.pair2()
+			&& let Some((trail, key)) = real.pair()
 		{
-			let file = File::new(&real).await?;
-			FilesOp::Upserting(parent.into(), [(key.into(), file)].into()).emit();
+			let file = engine::file(&real).await?;
+			FilesOp::Upserting(trail.into(), [(key.into(), file)].into()).emit();
 			MgrProxy::reveal(&real);
 		}
 
